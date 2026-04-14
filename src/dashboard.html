@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenClaw Observability</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']},colors:{base:'#1e1e2e',surface0:'#313244',surface1:'#45475a',surface2:'#585b70',overlay0:'#6c7086',text:'#cdd6f4',subtext0:'#a6adc8',peach:'#fab387',green:'#a6e3a1',teal:'#94e2d5',blue:'#89b4fa',mauve:'#cba6f7',red:'#f38ba8',yellow:'#f9e2af',sky:'#89dcfe',crust:'#11111b',mantle:'#181825'}}}}</script>
+<style>
+body{background:#11111b}
+.mono{font-family:'JetBrains Mono',monospace}
+.cbar{background:linear-gradient(180deg,#fab387,#e06c4f);border-radius:4px 4px 2px 2px;min-height:2px;transition:height .4s cubic-bezier(.22,1,.36,1)}
+.ccol:hover .cbar{opacity:1!important}
+@keyframes pd{0%,100%{opacity:1}50%{opacity:.3}}
+.ldot{animation:pd 2s infinite}
+@keyframes su{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ai{animation:su .35s ease-out both}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#313244;border-radius:4px}
+.fb{background:#181825;color:#6c7086;border:1px solid #313244;border-radius:9999px;padding:5px 14px;font-size:10px;font-weight:500;font-family:inherit;cursor:pointer;transition:all .15s}
+.fb:hover{color:#a6adc8;border-color:#45475a}
+.fb.on{background:#fab387;color:#11111b;border-color:#fab387;font-weight:600}
+.inp{background:#181825;color:#a6adc8;border:1px solid #313244;border-radius:8px;padding:5px 10px;font-size:10px;font-family:inherit;cursor:pointer;transition:border .15s}
+.inp:focus{outline:none;border-color:#fab387}
+.th{text-align:left;font-size:9px;font-weight:600;color:#585b70;text-transform:uppercase;letter-spacing:.8px;padding-bottom:8px}
+.thr{text-align:right;font-size:9px;font-weight:600;color:#585b70;text-transform:uppercase;letter-spacing:.8px;padding-bottom:8px}
+.td{padding:7px 0;font-size:11px;border-top:1px solid #11111b}
+.tr:first-child .td{border-top:none}
+.tr:hover{background:rgba(255,255,255,.015)}
+.tr.click{cursor:pointer}
+.tr.click:hover{background:rgba(255,255,255,.04)}
+.card{background:#1e1e2e;border:1px solid #313244;border-radius:16px;padding:16px 18px}
+.tab{padding:8px 16px;font-size:12px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:#6c7086;transition:.15s}
+.tab:hover{color:#a6adc8}
+.tab.on{color:#fab387;border-color:#fab387}
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:50;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-bg.show{display:flex}
+.modal{background:#1e1e2e;border:1px solid #45475a;border-radius:20px;max-width:640px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;position:relative}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:16px}
+.modal .close{position:absolute;top:16px;right:16px;background:none;border:none;color:#6c7086;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
+.modal .close:hover{background:#313244;color:#cdd6f4}
+.modal .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #11111b;font-size:12px}
+.modal .row:last-child{border:none}
+.modal .lbl{color:#6c7086}
+.modal .val{color:#cdd6f4;font-family:'JetBrains Mono',monospace;font-size:11px}
+.modal .val.green{color:#a6e3a1}
+.modal .val.blue{color:#89b4fa}
+.modal .val.mauve{color:#cba6f7}
+.plogo{width:16px;height:16px;border-radius:4px;flex-shrink:0}
+.plogo.invert{filter:invert(1) brightness(1.5) contrast(1.2)}
+.flex-cell{display:flex;align-items:center;gap:6px}
+.sev-critical{background:#f38ba8;color:#11111b}
+.sev-high{background:#fab387;color:#11111b}
+.sev-medium{background:#f9e2af;color:#11111b}
+.sev-low{background:#89b4fa;color:#11111b}
+.sev-ok{background:#a6e3a1;color:#11111b}
+.sev{font-size:9px;font-weight:600;padding:2px 8px;border-radius:6px;text-transform:uppercase}
+/* Loading */
+.loader-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;gap:20px}
+.loader{width:32px;height:32px;border-radius:50%;border:2px solid #313244;border-top-color:#fab387;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-text{font-size:11px;color:#6c7086;letter-spacing:1px}
+/* Skeleton shimmer */
+.skel{background:linear-gradient(90deg,#1e1e2e 25%,#252538 50%,#1e1e2e 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px;height:14px;margin-bottom:6px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel-lg{height:40px;width:120px;border-radius:10px}
+.skel-md{height:14px;width:80%;border-radius:6px}
+.skel-sm{height:10px;width:60%;border-radius:4px}
+/* Toggle switch */
+.toggle{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
+.toggle input{display:none}
+.toggle .slider{position:absolute;inset:0;background:#313244;border-radius:10px;transition:.2s}
+.toggle .slider::before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:#6c7086;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:rgba(166,227,161,.3)}
+.toggle input:checked+.slider::before{transform:translateX(16px);background:#a6e3a1}
+/* Settings row */
+.srow{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#181825;border-radius:12px;border:1px solid #313244}
+.srow:hover{border-color:#45475a}
+.srow .sname{font-size:12px;font-weight:500;color:#cba6f7;min-width:100px}
+.srow .smodel{flex:1}
+.srow select{background:#11111b;color:#a6adc8;border:1px solid #313244;border-radius:8px;padding:6px 10px;font-size:11px;font-family:inherit;cursor:pointer;width:100%;max-width:280px;transition:border .15s}
+.srow select:focus{outline:none;border-color:#fab387}
+.srow .sstatus{font-size:9px;min-width:40px;text-align:center}
+.saving{color:#f9e2af}
+.saved{color:#a6e3a1}
+.serror{color:#f38ba8}
+/* Cron row */
+.crow{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#181825;border-radius:12px;border:1px solid #313244}
+.crow:hover{border-color:#45475a}
+.crow .cname{font-size:11px;font-weight:500;color:#89b4fa;min-width:140px}
+.crow .cagent{font-size:10px;color:#cba6f7;min-width:80px}
+.crow .csched{font-size:10px;color:#6c7086;font-family:'JetBrains Mono',monospace;flex:1}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.pcell{background:#181825;border:1px solid #313244;border-radius:12px;padding:12px 14px}
+.pk{font-size:9px;font-weight:600;color:#6c7086;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.pv{font-size:12px;color:#cdd6f4;word-break:break-word}
+.pv.mono{font-size:11px}
+.pactions{display:flex;flex-wrap:wrap;gap:8px}
+</style>
+</head>
+<body class="text-text font-sans antialiased min-h-screen">
+
+<!-- Loading screen -->
+<div id="loadingScreen" class="loader-wrap">
+  <div class="loader"></div>
+  <p class="loader-text">Loading observability data...</p>
+</div>
+
+<!-- Main content (hidden until loaded) -->
+<div id="mainContent" style="display:none">
+
+<!-- Modal -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal">
+    <button class="close" onclick="closeModal()">&times;</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="max-w-[1280px] mx-auto px-4 sm:px-6 py-6">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl sm:text-2xl font-bold text-peach">OpenClaw Observability</h1>
+      <p class="text-xs text-overlay0 mt-1">Real-time cost tracking & security monitoring</p>
+    </div>
+    <div class="flex items-center gap-2 text-green text-xs font-semibold px-3 py-1.5 rounded-full" style="background:rgba(166,227,161,.1)">
+      <span class="w-1.5 h-1.5 rounded-full bg-green ldot"></span>LIVE
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex border-b border-surface0 mb-5">
+    <div class="tab on" data-tab="spend" onclick="switchTab('spend')">Spend</div>
+    <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
+    <div class="tab" data-tab="security" onclick="switchTab('security')">Security</div>
+  </div>
+
+  <!-- SPEND TAB -->
+  <div id="tab-spend">
+    <div class="flex flex-wrap items-center gap-1.5 mb-3">
+      <button class="fb on" data-r="today">Today</button>
+      <button class="fb" data-r="yesterday">Yesterday</button>
+      <button class="fb" data-r="week">Week</button>
+      <button class="fb" data-r="month">Month</button>
+      <button class="fb" data-r="all">All Time</button>
+      <span class="text-surface1 mx-1 text-xs">|</span>
+      <input type="date" id="df" class="inp w-28">
+      <span class="text-surface1 text-xs">-</span>
+      <input type="date" id="dt" class="inp w-28">
+      <button class="fb" id="aply">Apply</button>
+      <span class="text-surface1 mx-1 text-xs">|</span>
+      <select id="fa" class="inp"><option value="">All Agents</option></select>
+      <select id="fm" class="inp"><option value="">All Models</option></select>
+      <select id="fs" class="inp"><option value="">All Sources</option><option value="cron">Cron</option><option value="subagent">Subagent</option><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option><option value="direct">Direct</option></select>
+      <button class="fb" id="clr">Clear</button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div class="card relative overflow-hidden ai"><div class="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-green to-teal"></div><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Real API Spend</p><p class="text-3xl font-bold mono text-white mt-2">$<span id="kCost">0</span></p><p class="text-[10px] text-overlay0 mt-1" id="kDetail"></p></div>
+      <div class="card relative overflow-hidden ai" style="animation-delay:.05s"><div class="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-blue to-mauve"></div><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Tokens Processed</p><p class="text-3xl font-bold mono text-white mt-2"><span id="kTok">0</span></p></div>
+      <div class="card relative overflow-hidden ai" style="animation-delay:.1s"><div class="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-peach to-yellow"></div><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">API Calls</p><p class="text-3xl font-bold mono text-white mt-2"><span id="kReq">0</span></p></div>
+    </div>
+
+    <div class="card mb-4 ai" style="animation-delay:.12s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Daily Spend</h2><div class="flex items-end gap-[3px] h-20 overflow-x-auto" id="chart"></div></div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      <div class="card ai" style="animation-delay:.15s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">By Agent</h2><div class="overflow-x-auto"><table id="tAgent" class="w-full"></table></div></div>
+      <div class="card ai" style="animation-delay:.18s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">By Model</h2><div class="overflow-x-auto"><table id="tModel" class="w-full"></table></div></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+      <div class="card ai" style="animation-delay:.2s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">By Source</h2><div class="overflow-x-auto"><table id="tSrc" class="w-full"></table></div></div>
+      <div class="card ai" style="animation-delay:.22s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Active Crons</h2><div class="overflow-x-auto"><table id="tCron" class="w-full"></table></div></div>
+    </div>
+
+    <div class="card mb-4 ai" style="animation-delay:.24s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Subagents</h2><div class="overflow-x-auto"><table id="tSub" class="w-full"></table></div></div>
+
+    <div class="card ai" style="animation-delay:.26s"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Recent Calls</h2><div id="evs" class="max-h-[450px] overflow-y-auto space-y-0.5"></div></div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div id="tab-settings" style="display:none">
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Agent Models</h2>
+        <button class="fb" onclick="restartGW('restartBtn')" id="restartBtn">Restart Gateway</button>
+      </div>
+      <p class="text-[10px] text-overlay0 mb-4">Change the AI model for each agent. Changes require a gateway restart to take effect.</p>
+      <div id="agentSettings" class="space-y-3"></div>
+    </div>
+    <div class="card mb-4">
+      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-4">Default Model</h2>
+      <p class="text-[10px] text-overlay0 mb-3">New agents will use this model by default.</p>
+      <div class="flex items-center gap-3">
+        <select id="defaultModelSel" class="inp" style="min-width:220px" onchange="setDefault(this.value)"></select>
+        <span id="defaultStatus" class="text-[10px]"></span>
+      </div>
+    </div>
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div>
+          <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Billing Proxy</h2>
+          <p class="text-[10px] text-overlay0 mt-2">Embedded `openclaw-billing-proxy` runtime for Anthropic routing through Claude subscription auth.</p>
+        </div>
+        <button class="fb" onclick="refreshBillingProxy()">Refresh</button>
+      </div>
+      <div id="billingProxyPanel"></div>
+    </div>
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Cron Jobs</h2>
+      </div>
+      <p class="text-[10px] text-overlay0 mb-4">Enable or disable scheduled tasks. Model is inherited from the parent agent.</p>
+      <div id="cronSettings" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- SECURITY TAB -->
+  <div id="tab-security" style="display:none">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div class="card relative overflow-hidden"><div class="absolute top-0 inset-x-0 h-0.5" id="scoreBar"></div><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Security Score</p><p class="text-4xl font-bold mono mt-2" id="secScore">--</p><p class="text-[10px] text-overlay0 mt-1" id="secLabel"></p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Critical Issues</p><p class="text-4xl font-bold mono text-red mt-2" id="secCrit">0</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Findings</p><p class="text-4xl font-bold mono text-yellow mt-2" id="secTotal">0</p></div>
+    </div>
+    <div class="card mb-4"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Security Findings</h2><div id="secFindings" class="space-y-2"></div></div>
+  </div>
+</div>
+</div><!-- /mainContent -->
+
+<script>
+const TZ='America/Mexico_City';
+// Logos from Noosphere CDN — all 30 providers with dark mode support
+const CDN='https://blockchainstarter.nyc3.digitaloceanspaces.com/noosphere/logos';
+const DARK_INVERT=new Set(['openai','anthropic','xai','openrouter']);
+const PROV_IDS=['openai','anthropic','google','groq','mistral','xai','openrouter','cerebras','meta','deepseek','microsoft','nvidia','qwen','cohere','perplexity','amazon','together','fireworks-ai','replicate','nebius','novita','ollama','fal','huggingface','sambanova','comfyui','piper','kokoro','zai','pi-ai'];
+function logoUrl(p){if(!p||!PROV_IDS.includes(p))return'';const dark=document.documentElement.classList.contains('dark');return(dark&&DARK_INVERT.has(p))?CDN+'/svg-dark/'+p+'.svg':CDN+'/svg/'+p+'.svg';}
+let R='today',D=null;
+const $=id=>document.getElementById(id);
+const F=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(Math.round(n));
+const money=n=>n>=1?'$'+n.toFixed(2):n>=0.01?'$'+n.toFixed(3):'$'+n.toFixed(4);
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+const srcLabel={cron:'Cron',subagent:'Subagent',telegram:'Telegram',whatsapp:'WhatsApp',direct:'Direct',other:'Other'};
+const srcBg={cron:'background:rgba(137,180,250,.12);color:#89b4fa',subagent:'background:rgba(203,166,247,.12);color:#cba6f7',telegram:'background:rgba(137,220,254,.12);color:#89dcfe',whatsapp:'background:rgba(166,227,161,.12);color:#a6e3a1',direct:'background:#313244;color:#6c7086',other:'background:#313244;color:#585b70'};
+const badge=s=>'<span style="font-size:9px;font-weight:500;padding:2px 8px;border-radius:6px;'+(srcBg[s]||srcBg.other)+'">'+(srcLabel[s]||s)+'</span>';
+// Use CDN dark variants for dark backgrounds, normal for light
+function plogo(prov){if(!prov||!PROV_IDS.includes(prov))return'';const isDark=document.documentElement.classList.contains('dark');const folder=isDark&&DARK_INVERT.has(prov)?'svg-dark':'svg';return'<img src="'+CDN+'/'+folder+'/'+prov+'.svg" class="plogo">';}
+function cronH(raw){if(!raw)return'-';const s=raw.replace(/^cron\s*/i,'').replace(/\s*@.*$/,'').trim();if(s.startsWith('*/15'))return'Every 15 min';if(s.startsWith('*/30'))return'Every 30 min';if(s.startsWith('*/5 '))return'Every 5 min';const m=s.match(/^(\d+)\s+(\d+)/);if(m){const hr=+m[2],mn=+m[1],ap=hr>=12?'PM':'AM',h=hr===0?12:hr>12?hr-12:hr;const ts=s.match(/^\d+\s+([\d,]+)/);if(ts&&ts[1].includes(','))return ts[1].split(',').map(x=>{const n=+x;return(n===0?12:n>12?n-12:n)+':'+String(mn).padStart(2,'0')+(n>=12?' PM':' AM')}).join(', ');return h+':'+String(mn).padStart(2,'0')+' '+ap+' daily';}return s;}
+function fmtT(iso){if(!iso)return'';return new Date(iso).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});}
+
+// Tabs
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
+  ['spend','settings','security'].forEach(id=>{
+    const el=$('tab-'+id);
+    if(id===t){el.style.display='';el.style.animation='su .3s ease-out';}
+    else{el.style.display='none';}
+  });
+  if(t==='security')loadSec();
+  if(t==='settings')loadSettings();
+}
+
+// Modal
+function openModal(html){$('modalContent').innerHTML=html;$('modalBg').classList.add('show');document.body.style.overflow='hidden';}
+function closeModal(){$('modalBg').classList.remove('show');document.body.style.overflow='';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// Modal builders
+function agentModal(name,data){
+  const d=data.byAgent[name]||{};
+  // Find events for this agent
+  const evts=(data.recent||[]).filter(e=>e.agentId===name).slice(0,20);
+  const crons=Object.entries(data.crons||{}).filter(([,c])=>c.agent===name);
+  const subs=Object.entries(data.bySubagent||{}).filter(([,s])=>s.agent===name);
+  let h='<h3 style="color:#cba6f7">'+name+'</h3>';
+  h+='<div class="row"><span class="lbl">Total Cost</span><span class="val green">'+money(d.cost||0)+'</span></div>';
+  h+='<div class="row"><span class="lbl">API Calls</span><span class="val">'+(d.calls||0).toLocaleString()+'</span></div>';
+  h+='<div class="row"><span class="lbl">Tokens</span><span class="val">'+F(d.tok||0)+'</span></div>';
+  if(crons.length){h+='<h4 style="margin-top:16px;font-size:12px;font-weight:600;color:#89b4fa;margin-bottom:8px">Crons ('+crons.length+')</h4>';for(const[id,c]of crons){const sp=data.byCron[id]||{cost:0,calls:0};h+='<div class="row"><span class="lbl">'+c.name+' <span style="color:#585b70;font-size:9px">'+cronH(c.schedule)+'</span></span><span class="val green">'+money(sp.cost)+' ('+sp.calls+')</span></div>';}}
+  if(subs.length){h+='<h4 style="margin-top:16px;font-size:12px;font-weight:600;color:#cba6f7;margin-bottom:8px">Subagents ('+subs.length+')</h4>';for(const[id,s]of subs.slice(0,10)){const ctx=s.ctx?s.ctx.replace(/\[.*?\]/g,'').trim().slice(0,50):'—';h+='<div class="row"><span class="lbl" style="font-size:10px">'+s.model+' &mdash; '+ctx+'</span><span class="val green">'+money(s.cost)+' ('+s.calls+')</span></div>';}}
+  if(evts.length){h+='<h4 style="margin-top:16px;font-size:12px;font-weight:600;color:#fab387;margin-bottom:8px">Recent Calls</h4>';for(const e of evts){h+='<div class="row"><span class="lbl" style="font-size:10px">'+plogo(e.provider)+e.model+' '+badge(e.source)+'</span><span class="val green">'+money(e.cost)+'<span style="color:#585b70;margin-left:6px">'+fmtT(e.ts)+'</span></span></div>';}}
+  openModal(h);
+}
+
+function modelModal(name,data){
+  const d=data.byModel[name]||{};
+  const prov=name.includes('gemini')?'google':name.includes('claude')?'anthropic':'openai';
+  const evts=(data.recent||[]).filter(e=>e.model===name).slice(0,20);
+  let h='<h3>'+plogo(prov)+'<span style="color:#89b4fa">'+name+'</span></h3>';
+  h+='<div class="row"><span class="lbl">Provider</span><span class="val blue">'+prov+'</span></div>';
+  h+='<div class="row"><span class="lbl">Total Cost</span><span class="val green">'+money(d.cost||0)+'</span></div>';
+  h+='<div class="row"><span class="lbl">API Calls</span><span class="val">'+(d.calls||0).toLocaleString()+'</span></div>';
+  h+='<div class="row"><span class="lbl">Tokens</span><span class="val">'+F(d.tok||0)+'</span></div>';
+  if(d.calls>0){const avg=(d.cost||0)/(d.calls||1);h+='<div class="row"><span class="lbl">Avg Cost/Call</span><span class="val green">'+money(avg)+'</span></div>';}
+  // By agent breakdown
+  const byA={};for(const e of(data.recent||[]).filter(x=>x.model===name)){byA[e.agentId]=(byA[e.agentId]||0)+e.cost;}
+  const agents=Object.entries(byA).sort((a,b)=>b[1]-a[1]);
+  if(agents.length){h+='<h4 style="margin-top:16px;font-size:12px;font-weight:600;color:#cba6f7;margin-bottom:8px">By Agent</h4>';for(const[a,c]of agents){h+='<div class="row"><span class="lbl" style="color:#cba6f7">'+a+'</span><span class="val green">'+money(c)+'</span></div>';}}
+  if(evts.length){h+='<h4 style="margin-top:16px;font-size:12px;font-weight:600;color:#fab387;margin-bottom:8px">Recent Calls</h4>';for(const e of evts){h+='<div class="row"><span class="lbl" style="font-size:10px;color:#cba6f7">'+e.agentId+' '+badge(e.source)+'</span><span class="val green">'+money(e.cost)+'<span style="color:#585b70;margin-left:6px">'+fmtT(e.ts)+'</span></span></div>';}}
+  openModal(h);
+}
+
+function cronModal(id,cron,spend,data){
+  let h='<h3 style="color:#89b4fa">'+cron.name+'</h3>';
+  h+='<div class="row"><span class="lbl">Agent</span><span class="val mauve">'+cron.agent+'</span></div>';
+  h+='<div class="row"><span class="lbl">Schedule</span><span class="val">'+cronH(cron.schedule)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Raw Expression</span><span class="val" style="color:#585b70">'+cron.schedule+'</span></div>';
+  h+='<div class="row"><span class="lbl">Status</span><span class="val '+(cron.enabled?'green':'')+'">'+( cron.enabled?'Active':'Paused')+'</span></div>';
+  h+='<div class="row"><span class="lbl">Last Run Status</span><span class="val '+(cron.lastStatus==='error'?'" style="color:#f38ba8':'')+'">'+(cron.lastStatus||'—')+'</span></div>';
+  h+='<div class="row"><span class="lbl">Total Cost</span><span class="val green">'+money(spend.cost||0)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Executions</span><span class="val">'+(spend.calls||0)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Tokens</span><span class="val">'+F(spend.tok||0)+'</span></div>';
+  if(spend.calls>0){h+='<div class="row"><span class="lbl">Avg Cost/Run</span><span class="val green">'+money((spend.cost||0)/(spend.calls||1))+'</span></div>';}
+  h+='<div class="row"><span class="lbl">Cron ID</span><span class="val" style="color:#585b70;font-size:9px">'+id+'</span></div>';
+  openModal(h);
+}
+
+function subModal(id,sub){
+  const ctx=sub.ctx?sub.ctx.replace(/\[.*?\]/g,'').trim():'No context captured';
+  let h='<h3 style="color:#cba6f7">Subagent</h3>';
+  h+='<div class="row"><span class="lbl">Parent Agent</span><span class="val mauve">'+sub.agent+'</span></div>';
+  h+='<div class="row"><span class="lbl">Model</span><span class="val blue">'+plogo(sub.model?.includes('gemini')?'google':'anthropic')+sub.model+'</span></div>';
+  h+='<div class="row"><span class="lbl">Context</span><span class="val" style="color:#a6adc8;font-size:10px;max-width:400px;word-break:break-word">'+ctx+'</span></div>';
+  h+='<div class="row"><span class="lbl">API Calls</span><span class="val">'+sub.calls+'</span></div>';
+  h+='<div class="row"><span class="lbl">Tokens</span><span class="val">'+F(sub.tok)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Cost</span><span class="val green">'+money(sub.cost)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Started</span><span class="val" style="color:#585b70">'+fmtT(sub.firstTs)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Session ID</span><span class="val" style="color:#585b70;font-size:9px">'+id+'</span></div>';
+  openModal(h);
+}
+
+function eventModal(e){
+  const prov=e.provider||'?';
+  let h='<h3>'+plogo(prov)+'<span style="color:#89b4fa">'+e.model+'</span></h3>';
+  h+='<div class="row"><span class="lbl">Agent</span><span class="val mauve">'+e.agentId+'</span></div>';
+  h+='<div class="row"><span class="lbl">Provider</span><span class="val">'+plogo(prov)+prov+'</span></div>';
+  h+='<div class="row"><span class="lbl">Source</span><span class="val">'+badge(e.source)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Cost</span><span class="val green">'+money(e.cost)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Total Tokens</span><span class="val">'+F(e.tokens?.total||0)+'</span></div>';
+  h+='<div class="row"><span class="lbl">Input Tokens</span><span class="val">'+(e.tokens?.input||0).toLocaleString()+'</span></div>';
+  h+='<div class="row"><span class="lbl">Output Tokens</span><span class="val">'+(e.tokens?.output||0).toLocaleString()+'</span></div>';
+  h+='<div class="row"><span class="lbl">Cache Read</span><span class="val">'+(e.tokens?.cacheRead||0).toLocaleString()+'</span></div>';
+  h+='<div class="row"><span class="lbl">Timestamp</span><span class="val" style="color:#585b70">'+fmtT(e.ts)+'</span></div>';
+  openModal(h);
+}
+
+// Data fetch
+function DR(r){const n=new Date(),t=new Date(n.getFullYear(),n.getMonth(),n.getDate());if(r==='today')return{from:t.toISOString().slice(0,10)};if(r==='yesterday'){const y=new Date(t);y.setDate(y.getDate()-1);return{from:y.toISOString().slice(0,10),to:y.toISOString().slice(0,10)};}if(r==='week'){const w=new Date(t);w.setDate(w.getDate()-w.getDay());return{from:w.toISOString().slice(0,10)};}if(r==='month')return{from:new Date(n.getFullYear(),n.getMonth(),1).toISOString().slice(0,10)};return{};}
+
+async function Q(cf,ct){const p=new URLSearchParams();if($('fa').value)p.set('agent',$('fa').value);if($('fm').value)p.set('model',$('fm').value);if($('fs').value)p.set('source',$('fs').value);if(cf){p.set('from',cf);if(ct)p.set('to',ct);}else{const r=DR(R);if(r.from)p.set('from',r.from);if(r.to)p.set('to',r.to);}return(await fetch('/api/dashboard?'+p)).json();}
+
+document.querySelectorAll('.fb[data-r]').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.fb[data-r]').forEach(x=>x.classList.remove('on'));b.classList.add('on');R=b.dataset.r;render(await Q());});
+$('aply').onclick=async()=>{document.querySelectorAll('.fb[data-r]').forEach(x=>x.classList.remove('on'));R='x';render(await Q($('df').value,$('dt').value||undefined));};
+['fa','fm','fs'].forEach(id=>$(id).onchange=async()=>render(await Q()));
+$('clr').onclick=async()=>{['fa','fm','fs'].forEach(id=>$(id).value='');render(await Q());};
+
+function pop(sel,obj){const v=sel.value;sel.querySelectorAll('option:not(:first-child)').forEach(o=>o.remove());for(const k of Object.keys(obj).sort()){const o=document.createElement('option');o.value=k;o.textContent=k;sel.appendChild(o);}sel.value=v;}
+
+function render(d){
+  D=d;
+  $('kCost').textContent=d.totalCost.toFixed(2);
+  $('kTok').textContent=F(d.totalTokens);
+  $('kReq').textContent=d.totalRequests.toLocaleString();
+  const agents=Object.entries(d.byAgent||{}).sort((a,b)=>b[1].cost-a[1].cost);
+  $('kDetail').textContent=agents[0]&&agents[0][1].cost>0?'Top: '+agents[0][0]+' ('+money(agents[0][1].cost)+')':'No spend';
+  pop($('fa'),d.byAgent||{});pop($('fm'),d.byModel||{});
+
+  // Chart
+  const days=Object.entries(d.byDay||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+  const ch=$('chart');
+  if(days.length){const mx=Math.max(...days.map(([,v])=>v),0.001);ch.innerHTML=days.map(([day,cost])=>{const h=Math.max((cost/mx)*68,2);const label=new Date(day+'T12:00:00').toLocaleDateString('en-US',{timeZone:TZ,month:'short',day:'numeric'});return'<div class="ccol flex flex-col items-center flex-1 min-w-[20px]"><span class="text-[7px] mono whitespace-nowrap" style="color:#6c7086">'+money(cost)+'</span><div class="cbar w-full max-w-[26px] opacity-80" style="height:'+h+'px"></div><span class="text-[7px] mt-1 whitespace-nowrap" style="color:#585b70">'+label+'</span></div>';}).join('');}
+
+  // Agent table (clickable)
+  const at=$('tAgent');let ah='<thead><tr><th class="th">Agent</th><th class="thr">Calls</th><th class="thr">Tokens</th><th class="thr">Cost</th></tr></thead><tbody>';
+  for(const[k,v]of agents.filter(([k])=>k)){ah+='<tr class="tr click" onclick="agentModal(\''+k+'\',D)"><td class="td font-medium" style="color:#cba6f7">'+k+'</td><td class="td text-right mono text-xs" style="color:#6c7086">'+v.calls.toLocaleString()+'</td><td class="td text-right mono text-xs" style="color:#6c7086">'+F(v.tok)+'</td><td class="td text-right mono text-xs font-semibold" style="color:#a6e3a1">'+money(v.cost)+'</td></tr>';}
+  at.innerHTML=ah+'</tbody>';
+
+  // Model table (clickable)
+  const mt=$('tModel');const models=Object.entries(d.byModel||{}).sort((a,b)=>b[1].cost-a[1].cost);
+  let mh='<thead><tr><th class="th">Model</th><th class="thr">Calls</th><th class="thr">Cost</th></tr></thead><tbody>';
+  for(const[k,v]of models.filter(([k])=>k&&k!=='null')){const prov=k.includes('gemini')?'google':k.includes('claude')?'anthropic':'openai';mh+='<tr class="tr click" onclick="modelModal(\''+k+'\',D)"><td class="td font-medium text-xs flex-cell" style="color:#89b4fa">'+plogo(prov)+'<span>'+k+'</span></td><td class="td text-right mono text-xs" style="color:#6c7086">'+v.calls.toLocaleString()+'</td><td class="td text-right mono text-xs font-semibold" style="color:#a6e3a1">'+money(v.cost)+'</td></tr>';}
+  mt.innerHTML=mh+'</tbody>';
+
+  // Source table
+  const st=$('tSrc');const srcs=Object.entries(d.bySource||{}).sort((a,b)=>b[1].cost-a[1].cost);
+  let sh='<thead><tr><th class="th">Source</th><th class="thr">Calls</th><th class="thr">Tokens</th><th class="thr">Cost</th></tr></thead><tbody>';
+  for(const[k,v]of srcs.filter(([k])=>k&&k!=='null')){sh+='<tr class="tr"><td class="td">'+badge(k)+'</td><td class="td text-right mono text-xs" style="color:#6c7086">'+v.calls.toLocaleString()+'</td><td class="td text-right mono text-xs" style="color:#6c7086">'+F(v.tok)+'</td><td class="td text-right mono text-xs font-semibold" style="color:#a6e3a1">'+money(v.cost)+'</td></tr>';}
+  st.innerHTML=sh+'</tbody>';
+
+  // Crons (clickable)
+  const ct2=$('tCron');const crons=d.crons||{};const cs=d.byCron||{};
+  let ch2='<thead><tr><th class="th">Name</th><th class="th">Agent</th><th class="th">Frequency</th><th class="th" style="text-align:center">Status</th><th class="thr">Cost</th></tr></thead><tbody>';
+  for(const[id,c]of Object.entries(crons).sort((a,b)=>(cs[b[0]]?.cost||0)-(cs[a[0]]?.cost||0))){const sp=cs[id]||{cost:0,calls:0,tok:0};const bg2=c.enabled?'background:rgba(166,227,161,.12);color:#a6e3a1':'background:#313244;color:#585b70';const errB=c.lastStatus==='error'?' <span style="font-size:8px;color:#f38ba8">err</span>':'';ch2+='<tr class="tr click" onclick="cronModal(\''+id+'\',D.crons[\''+id+'\'],D.byCron[\''+id+'\']||{cost:0,calls:0,tok:0},D)"><td class="td font-medium text-xs" style="color:#89b4fa">'+c.name+errB+'</td><td class="td text-[10px]" style="color:#cba6f7">'+c.agent+'</td><td class="td mono text-[10px]" style="color:#6c7086">'+cronH(c.schedule)+'</td><td class="td text-center"><span style="font-size:9px;font-weight:500;padding:2px 8px;border-radius:6px;'+bg2+'">'+(c.enabled?'Active':'Paused')+'</span></td><td class="td text-right mono text-xs font-semibold" style="color:#a6e3a1">'+money(sp.cost)+' <span style="color:#6c7086;font-weight:400">('+sp.calls+')</span></td></tr>';}
+  ct2.innerHTML=ch2+'</tbody>';
+
+  // Subagents (clickable)
+  const su=$('tSub');const subs=Object.entries(d.bySubagent||{}).sort((a,b)=>b[1].cost-a[1].cost);
+  if(subs.length){let sh2='<thead><tr><th class="th">Agent</th><th class="th">Model</th><th class="th">Context</th><th class="thr">Calls</th><th class="thr">Tokens</th><th class="thr">Cost</th></tr></thead><tbody>';for(const[id,s]of subs){const ctx=s.ctx?s.ctx.replace(/\[.*?\]/g,'').trim().slice(0,50):'—';const prov=s.model?.includes('gemini')?'google':'anthropic';sh2+='<tr class="tr click" onclick="subModal(\''+id+'\',D.bySubagent[\''+id+'\'])"><td class="td text-[10px] font-medium" style="color:#cba6f7">'+s.agent+'</td><td class="td text-[10px] flex-cell" style="color:#89b4fa">'+plogo(prov)+'<span>'+s.model+'</span></td><td class="td text-[10px] truncate max-w-[180px]" style="color:#6c7086" title="'+(s.ctx||'')+'">'+ctx+'</td><td class="td text-right mono text-[10px]" style="color:#6c7086">'+s.calls+'</td><td class="td text-right mono text-[10px]" style="color:#6c7086">'+F(s.tok)+'</td><td class="td text-right mono text-[10px] font-semibold" style="color:#a6e3a1">'+money(s.cost)+'</td></tr>';}su.innerHTML=sh2+'</tbody>';}else su.innerHTML='<p class="text-xs py-3" style="color:#585b70">No subagents</p>';
+
+  // Events (clickable)
+  const ev=$('evs');const evts=d.recent||[];
+  if(evts.length){ev.innerHTML=evts.map((e,i)=>{const costStr=e.cost>0?money(e.cost):'<span style="color:#6c7086">sub</span>';return'<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors hover:bg-white/[.03]" onclick="eventModal(D.recent['+i+'])"><span class="font-medium text-[10px] w-16 shrink-0 truncate" style="color:#cba6f7">'+e.agentId+'</span>'+badge(e.source)+'<span class="text-[10px] flex-1 flex items-center gap-1 min-w-0" style="color:#89b4fa">'+plogo(e.provider)+'<span class="truncate">'+e.model+'</span></span><span class="mono text-[10px] font-semibold w-16 text-right shrink-0" style="color:#a6e3a1">'+costStr+'</span><span class="mono text-[10px] w-12 text-right shrink-0" style="color:#6c7086">'+F(e.tokens?.total||0)+'</span><span class="text-[9px] w-28 text-right shrink-0 hidden sm:inline" style="color:#585b70">'+fmtT(e.ts)+'</span></div>';}).join('');}else ev.innerHTML='<p class="text-xs py-6 text-center" style="color:#585b70">No events</p>';
+}
+
+// Security tab
+async function loadSec(){
+  $('secFindings').innerHTML='<div class="flex items-center gap-3 py-6 justify-center"><div class="loader" style="width:20px;height:20px"></div><span class="text-xs" style="color:#6c7086">Scanning...</span></div>';
+  $('secScore').textContent='--';$('secCrit').textContent='--';$('secTotal').textContent='--';
+  try{
+    const d=await(await fetch('/api/security')).json();
+    $('secScore').textContent=d.score;
+    $('secScore').style.color=d.score>=80?'#a6e3a1':d.score>=50?'#f9e2af':'#f38ba8';
+    $('scoreBar').style.background=d.score>=80?'linear-gradient(90deg,#a6e3a1,#94e2d5)':d.score>=50?'linear-gradient(90deg,#f9e2af,#fab387)':'linear-gradient(90deg,#f38ba8,#fab387)';
+    $('secLabel').textContent=d.score>=80?'Good posture':d.score>=50?'Needs attention':'Action required';
+    const crit=d.findings.filter(f=>f.severity==='critical').length;
+    $('secCrit').textContent=crit;
+    $('secTotal').textContent=d.findings.length;
+    const el=$('secFindings');
+    el.innerHTML=d.findings.map(f=>{
+      const sevCls='sev-'+f.severity;
+      const icon={critical:'!!!',high:'!!',medium:'!',low:'i',ok:'OK'}[f.severity]||'?';
+      return'<div class="flex items-start gap-3 p-3 rounded-xl" style="background:#181825;border:1px solid #313244"><span class="sev '+sevCls+'" style="min-width:60px;text-align:center">'+f.severity+'</span><div class="flex-1"><p class="text-xs font-medium" style="color:#cdd6f4">'+f.label+'</p>'+(f.detail?'<p class="text-[10px] mt-1" style="color:#6c7086">'+f.detail+'</p>':'')+(f.path?'<p class="mono text-[9px] mt-1" style="color:#585b70">'+f.path+(f.perms?' &mdash; '+f.perms:'')+'</p>':'')+(f.value?'<p class="mono text-[10px] mt-1" style="color:#585b70">'+f.value+'</p>':'')+'</div></div>';
+    }).join('');
+  }catch(e){$('secFindings').innerHTML='<p class="text-red text-xs">Failed to load: '+e.message+'</p>';}
+}
+
+// ---- Settings tab ----
+let CFG=null;
+let BP_NOTE='';
+async function loadSettings(){
+  $('agentSettings').innerHTML='<div class="flex items-center gap-3 py-6 justify-center"><div class="loader" style="width:20px;height:20px"></div><span class="text-xs" style="color:#6c7086">Loading config...</span></div>';
+  $('billingProxyPanel').innerHTML='<div class="flex items-center gap-3 py-6 justify-center"><div class="loader" style="width:20px;height:20px"></div><span class="text-xs" style="color:#6c7086">Checking proxy...</span></div>';
+  $('cronSettings').innerHTML='<div class="flex items-center gap-3 py-4 justify-center"><div class="loader" style="width:20px;height:20px"></div></div>';
+  try{
+    CFG=await(await fetch('/api/config')).json();
+    renderSettings();
+  }catch(e){
+    $('agentSettings').innerHTML='<p style="color:#f38ba8;font-size:11px">Failed to load: '+e.message+'</p>';
+  }
+}
+
+function renderSettings(){
+  if(!CFG)return;
+  // Agent model selectors
+  const as=$('agentSettings');
+  as.innerHTML=CFG.agents.map(a=>{
+    const opts=CFG.models.map(m=>'<option value="'+m.id+'"'+(a.model===m.id?' selected':'')+'>'+m.name+' — '+m.cost+'</option>').join('');
+    return'<div class="srow"><span class="sname">'+a.id+'</span><div class="smodel"><select onchange="setModel('+a.index+',this.value,this)" data-agent="'+a.id+'">'+opts+'</select></div><span class="sstatus" id="st-'+a.index+'"></span></div>';
+  }).join('');
+
+  // Default model
+  const ds=$('defaultModelSel');
+  ds.innerHTML=CFG.models.map(m=>'<option value="'+m.id+'"'+(CFG.defaultModel===m.id?' selected':'')+'>'+m.name+'</option>').join('');
+
+  renderBillingProxy();
+
+  // Cron toggles
+  const cs=$('cronSettings');
+  const crons=Object.entries(CFG.crons);
+  if(crons.length){
+    cs.innerHTML=crons.map(([id,c])=>{
+      const checked=c.enabled?'checked':'';
+      return'<div class="crow"><label class="toggle"><input type="checkbox" '+checked+' onchange="toggleCr(\''+id+'\',this.checked,this)"><span class="slider"></span></label><span class="cname">'+c.name+'</span><span class="cagent">'+c.agent+'</span><span class="csched">'+cronH(c.schedule)+'</span><span class="sstatus" id="cst-'+id.slice(0,8)+'"></span></div>';
+    }).join('');
+  }else cs.innerHTML='<p class="text-xs" style="color:#585b70">No crons found. Is the gateway running?</p>';
+}
+
+function proxyPill(text,bg,fg){return'<span style="font-size:9px;font-weight:600;padding:3px 8px;border-radius:9999px;background:'+bg+';color:'+fg+'">'+text+'</span>';}
+
+function renderBillingProxy(){
+  const wrap=$('billingProxyPanel');
+  const bp=CFG?.billingProxy||{};
+  const cfg=bp.config||{};
+  const creds=bp.credentials||{};
+  const routing=bp.routing||{};
+  const running=!!bp.running;
+  const statusPill=running
+    ? proxyPill('RUNNING','rgba(166,227,161,.15)','#a6e3a1')
+    : bp.status==='error'
+      ? proxyPill('ERROR','rgba(243,139,168,.18)','#f38ba8')
+      : proxyPill('STOPPED','rgba(249,226,175,.16)','#f9e2af');
+  const routePill=routing.enabled
+    ? proxyPill('ROUTED','rgba(137,180,250,.15)','#89b4fa')
+    : proxyPill('DIRECT','rgba(108,112,134,.22)','#a6adc8');
+  const note=BP_NOTE
+    ? '<div class="text-[10px] mb-3" style="color:'+(BP_NOTE.startsWith('Error:')?'#f38ba8':'#a6adc8')+'">'+esc(BP_NOTE)+'</div>'
+    : '';
+  const primaryBtn=running
+    ? '<button class="fb" onclick="restartBillingProxy()">Restart Proxy</button><button class="fb" onclick="stopBillingProxy()">Stop Proxy</button>'
+    : '<button class="fb" onclick="startBillingProxy()">Start Proxy</button>';
+
+  wrap.innerHTML=
+    note+
+    '<div class="flex items-center gap-2 flex-wrap mb-4">'+statusPill+routePill+'</div>'+
+    '<div class="pgrid mb-4">'+
+      '<div class="pcell"><div class="pk">Proxy Listen</div><div class="pv mono">'+esc((cfg.bindHost||'127.0.0.1')+':'+(cfg.port||'18801'))+'</div></div>'+
+      '<div class="pcell"><div class="pk">OpenClaw Base URL</div><div class="pv mono">'+esc(cfg.routeBaseUrl||'http://127.0.0.1:18801')+'</div></div>'+
+      '<div class="pcell"><div class="pk">Current Anthropic baseUrl</div><div class="pv mono">'+esc(routing.currentBaseUrl||'not set')+'</div></div>'+
+      '<div class="pcell"><div class="pk">Requests Served</div><div class="pv mono">'+esc(bp.requestCount||0)+'</div></div>'+
+      '<div class="pcell"><div class="pk">Subscription</div><div class="pv">'+esc(creds.subscriptionType||'unknown')+'</div></div>'+
+      '<div class="pcell"><div class="pk">Token Expires</div><div class="pv">'+esc(creds.tokenExpiresInHours?(creds.tokenExpiresInHours+'h'):'unknown')+'</div></div>'+
+    '</div>'+
+    '<div class="pcell mb-4"><div class="pk">Credentials Source</div><div class="pv mono">'+esc(creds.source||creds.error||'not found')+'</div>'+(creds.error?'<div class="text-[10px] mt-2" style="color:#f38ba8">'+esc(creds.error)+'</div>':'')+(bp.lastError?'<div class="text-[10px] mt-2" style="color:#f38ba8">'+esc(bp.lastError)+'</div>':'')+'<div class="text-[10px] mt-2" style="color:#6c7086">Changing the Anthropic base URL still requires a Gateway restart.</div></div>'+
+    '<div class="pactions">'+
+      primaryBtn+
+      '<button class="fb'+(routing.enabled?' on':'')+'" onclick="setBillingProxyRouting(true)">Use Proxy For Anthropic</button>'+
+      '<button class="fb" onclick="setBillingProxyRouting(false)">Remove Proxy Route</button>'+
+      '<button class="fb" onclick="restartGW(\'proxyRestartGwBtn\')" id="proxyRestartGwBtn">Restart Gateway</button>'+
+    '</div>';
+}
+
+async function setModel(idx,model,el){
+  const st=$('st-'+idx);
+  st.textContent='saving...';st.className='sstatus saving';
+  const r=await(await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setAgentModel',agentIndex:idx,model})})).json();
+  if(r.ok){st.textContent='saved';st.className='sstatus saved';$('restartBtn').style.background='#fab387';$('restartBtn').style.color='#11111b';}
+  else{st.textContent='error';st.className='sstatus serror';}
+  setTimeout(()=>{st.textContent='';},3000);
+}
+
+async function setDefault(model){
+  const st=$('defaultStatus');
+  st.textContent='saving...';st.className='saving';
+  const r=await(await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setDefaultModel',model})})).json();
+  st.textContent=r.ok?'saved':'error';st.className=r.ok?'saved':'serror';
+  setTimeout(()=>{st.textContent='';},3000);
+}
+
+async function toggleCr(id,enabled,el){
+  const st=$('cst-'+id.slice(0,8));
+  if(st){st.textContent='...';st.className='sstatus saving';}
+  const r=await(await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'toggleCron',cronId:id,enabled})})).json();
+  if(st){st.textContent=r.ok?(enabled?'on':'off'):'err';st.className='sstatus '+(r.ok?'saved':'serror');setTimeout(()=>{st.textContent='';},3000);}
+}
+
+async function restartGW(btnId='restartBtn'){
+  const btn=$(btnId);
+  btn.textContent='Restarting...';btn.disabled=true;
+  const r=await(await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'restart'})})).json();
+  btn.textContent=r.ok?'Restarted!':'Error';
+  btn.style.background=r.ok?'#a6e3a1':'#f38ba8';
+  setTimeout(()=>{btn.textContent='Restart Gateway';btn.style.background='';btn.style.color='';btn.disabled=false;},3000);
+}
+
+async function billingProxyAction(action,payload,msg){
+  BP_NOTE=msg||'Working...';
+  renderBillingProxy();
+  try{
+    const r=await(await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...payload})})).json();
+    if(!r.ok)throw new Error(r.error||'Action failed');
+    if(action==='setBillingProxyRouting'){
+      $('restartBtn').style.background='#fab387';
+      $('restartBtn').style.color='#11111b';
+      BP_NOTE=payload.enabled?'Anthropic now points to the local billing proxy. Restart Gateway to apply.':'Anthropic proxy route removed. Restart Gateway to apply.';
+    }else{
+      BP_NOTE='Billing proxy updated.';
+    }
+  }catch(e){
+    BP_NOTE='Error: '+e.message;
+  }
+  await loadSettings();
+}
+
+async function refreshBillingProxy(){await loadSettings();}
+async function startBillingProxy(){await billingProxyAction('startBillingProxy',{},'Starting billing proxy...');}
+async function stopBillingProxy(){await billingProxyAction('stopBillingProxy',{},'Stopping billing proxy...');}
+async function restartBillingProxy(){await billingProxyAction('restartBillingProxy',{},'Restarting billing proxy...');}
+async function setBillingProxyRouting(enabled){await billingProxyAction('setBillingProxyRouting',{enabled},enabled?'Updating Anthropic baseUrl...':'Removing Anthropic baseUrl...');}
+
+// ---- Main ----
+let firstLoad=true;
+async function tick(){
+  try{
+    render(await Q());
+    if(firstLoad){
+      firstLoad=false;
+      $('loadingScreen').style.display='none';
+      $('mainContent').style.display='';
+      $('mainContent').style.animation='su .4s ease-out';
+    }
+  }catch(e){
+    console.error(e);
+    if(firstLoad){
+      $('loadingScreen').innerHTML='<div style="text-align:center"><p style="color:#f38ba8;font-size:13px;margin-bottom:8px">Failed to load</p><p style="color:#6c7086;font-size:11px">'+e.message+'</p><button class="fb" onclick="location.reload()" style="margin-top:12px">Retry</button></div>';
+    }
+  }
+}
+tick();setInterval(tick,15000);
+</script>
+</body>
+</html>

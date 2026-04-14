@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "alerts": {
+    "telegram": false,
+    "telegramChatId": ""
+  },
+  "global": {
+    "dailyLimit": 10.00,
+    "weeklyLimit": 50.00,
+    "monthlyLimit": 200.00
+  },
+  "perAgent": {
+    "my-agent": { "dailyLimit": 5.00, "monthlyLimit": 50.00 }
+  },
+  "perModel": {
+    "claude-opus-4-6": { "dailyLimit": 5.00 },
+    "claude-sonnet-4-6": { "dailyLimit": 10.00 }
+  },
+  "actions": {
+    "onWarning": "alert",
+    "onLimit": "alert+pause",
+    "warningThreshold": 0.80
+  }
+}

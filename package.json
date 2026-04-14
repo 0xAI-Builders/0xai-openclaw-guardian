@@ -1,0 +1,38 @@
+{
+  "name": "openclaw-observability",
+  "version": "1.0.0",
+  "description": "Real-time cost tracking, security monitoring, and settings dashboard for OpenClaw AI agent deployments",
+  "type": "module",
+  "main": "src/server.mjs",
+  "bin": {
+    "openclaw-obs": "./bin/cli.mjs",
+    "openclaw-observability": "./bin/cli.mjs"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node src/server.mjs"
+  },
+  "keywords": [
+    "openclaw",
+    "observability",
+    "cost-tracking",
+    "ai-agents",
+    "dashboard",
+    "monitoring"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "noosphere": "*"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "config/",
+    "hooks/",
+    "README.md",
+    "LICENSE"
+  ]
+}
