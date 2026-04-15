@@ -28,6 +28,12 @@ body{background:#11111b}
 .ib.danger{background:rgba(243,139,168,.1);color:#f38ba8;border-color:rgba(243,139,168,.4)}
 .ib.danger:hover{background:#f38ba8;color:#11111b;border-color:#f38ba8}
 .row-actions{display:inline-flex !important;gap:6px;align-items:center;flex-wrap:nowrap;white-space:nowrap;min-width:72px}
+/* Anchor icon next to headings — click to copy slug URL to clipboard. */
+.slug-link{display:inline-block;margin-left:6px;opacity:.0;font-size:11px;color:#6c7086;cursor:pointer;user-select:none;transition:opacity .15s}
+[data-slug]:hover .slug-link,h1:hover>.slug-link,h2:hover>.slug-link,h3:hover>.slug-link{opacity:.7}
+.slug-link:hover{opacity:1 !important;color:#fab387}
+.slug-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e1e2e;border:1px solid #a6e3a1;color:#a6e3a1;padding:8px 16px;border-radius:8px;font-size:12px;z-index:9999;opacity:0;transition:opacity .2s;pointer-events:none}
+.slug-toast.show{opacity:1}
 /* Normalize all .td cells — gap between columns + vertical align middle */
 td.td{padding:7px 10px 7px 0 !important;vertical-align:middle !important}
 td.td:first-child{padding-left:4px !important}
@@ -251,7 +257,7 @@ td.td:last-child{padding-right:4px !important}
       <div class="card" title="Average round-trip latency in milliseconds"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Avg Latency</p><p class="text-3xl font-bold mono text-blue mt-2" id="callsLat">0ms</p></div>
       <div class="card" title="Requests rejected before they reached the provider (killed by guards)"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Blocked</p><p class="text-3xl font-bold mono text-red mt-2" id="callsBlocked">0</p></div>
     </div>
-    <div class="flex flex-wrap gap-2 mb-3">
+    <div id="calls-filters" data-slug="filters" class="flex flex-wrap gap-2 mb-3">
       <select id="callProv" class="inp" title="Filter by provider (anthropic, google, openai, etc.)"><option value="">All providers</option><option>anthropic</option><option>google</option><option>openai</option></select>
       <input id="callModel" class="inp" placeholder="model filter" title="Substring match on the model ID, e.g. sonnet or opus-4-6" />
       <select id="callBilling" class="inp" title="Subscription = consumed from a Claude Max / equivalent plan. API = direct pay-per-token."><option value="">All billing</option><option value="sub">Subscription only</option><option value="api">API only</option></select>
@@ -311,7 +317,7 @@ td.td:last-child{padding-right:4px !important}
       <div class="card" title="API-equivalent spend over the last 7 rolling days"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Week</p><p class="text-3xl font-bold mono mt-2" id="limSpendWeek">$0</p></div>
       <div class="card" title="API-equivalent spend over the last 30 rolling days"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Month</p><p class="text-3xl font-bold mono mt-2" id="limSpendMonth">$0</p></div>
     </div>
-    <div class="card mb-4">
+    <div id="limits-caps" data-slug="caps" class="card mb-4">
       <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3" title="Hard caps enforced by the proxy. Exceeding any cap returns HTTP 429 and blocks the upstream request.">Global Caps (USD)</h2>
       <div class="grid grid-cols-3 gap-3 mb-3">
         <div><label class="text-[10px] text-overlay0" title="Maximum spend allowed per calendar day (midnight to midnight)">Daily</label><input id="capDaily" class="inp w-full" type="number" step="0.01" placeholder="$" title="Blocks further calls once reached. Leave empty for no cap."/></div>
@@ -321,7 +327,7 @@ td.td:last-child{padding-right:4px !important}
       <div class="flex items-center gap-3 mb-3">
         <label class="flex items-center gap-2 text-xs" title="When enabled, the proxy rejects every incoming request with a 429. Use to stop runaway traffic immediately."><input type="checkbox" id="capPaused"/> Pause all (emergency kill-switch)</label>
       </div>
-      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2" title="Protects against runaway loops: if one session sends more than `Max calls` within `Window` seconds, the next call is blocked.">Loop Detector</h2>
+      <h2 id="limits-loop" data-slug="loop" class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2" title="Protects against runaway loops: if one session sends more than `Max calls` within `Window` seconds, the next call is blocked.">Loop Detector</h2>
       <div class="grid grid-cols-3 gap-3 mb-3">
         <div><label class="text-[10px] text-overlay0" title="Sliding window size, in seconds">Window (sec)</label><input id="loopWin" class="inp w-full" type="number" placeholder="60" title="Rolling time window in seconds used to count per-session calls"/></div>
         <div><label class="text-[10px] text-overlay0" title="Maximum calls allowed per session within the window">Max calls</label><input id="loopMax" class="inp w-full" type="number" placeholder="30" title="Block further calls from a session once this many have been made within the window"/></div>
@@ -355,9 +361,11 @@ function cronH(raw){if(!raw)return'-';const s=raw.replace(/^cron\s*/i,'').replac
 function fmtT(iso){if(!iso)return'';return new Date(iso).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});}
 
 // Tabs
-function switchTab(t){
+const TABS=['spend','calls','crons','limits','settings','security'];
+function switchTab(t, opts={}){
+  if(!TABS.includes(t)) t='spend';
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
-  ['spend','calls','crons','limits','settings','security'].forEach(id=>{
+  TABS.forEach(id=>{
     const el=$('tab-'+id);
     if(!el) return;
     if(id===t){el.style.display='';el.style.animation='su .3s ease-out';}
@@ -368,6 +376,75 @@ function switchTab(t){
   if(t==='crons')loadCrons();
   if(t==='limits')loadLimits();
   if(t==='settings')loadSettings();
+  // Update URL slug unless we were invoked by hashchange itself.
+  if(!opts.fromHash){
+    const newHash='#'+t;
+    if(location.hash!==newHash){
+      history.replaceState(null,'',newHash);
+    }
+  }
+  // After the tab is visible, scroll to the section slug if present.
+  if(opts.sectionSlug){
+    setTimeout(()=>{
+      const el=document.querySelector('[data-slug="'+opts.sectionSlug+'"]');
+      if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+    },80);
+  }
+}
+
+// Parse hashes like "#calls" or "#limits/caps" and route.
+function applyHashRoute(){
+  const raw=(location.hash||'#spend').slice(1);
+  const [tab,section]=raw.split('/');
+  switchTab(tab,{fromHash:true, sectionSlug: section || null});
+}
+window.addEventListener('hashchange', applyHashRoute);
+document.addEventListener('DOMContentLoaded', () => {
+  applyHashRoute();
+  injectSlugAnchors();
+});
+
+// Toast feedback
+function showToast(msg){
+  let t=document.querySelector('.slug-toast');
+  if(!t){t=document.createElement('div');t.className='slug-toast';document.body.appendChild(t);}
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._to); t._to=setTimeout(()=>t.classList.remove('show'),1400);
+}
+// Copy current slug URL
+function copySlug(slug){
+  const url=`${location.origin}/${slug}`;
+  navigator.clipboard.writeText(url).then(()=>showToast('Link copied: '+url),()=>showToast('Copy failed'));
+}
+// Auto-inject "🔗" anchor icon next to every heading that has a parent data-slug,
+// and next to the active tab label (so users can share "this specific view").
+function injectSlugAnchors(){
+  // Tabs — share current tab link
+  document.querySelectorAll('.tab').forEach(tab=>{
+    if(tab.querySelector('.slug-link'))return;
+    const a=document.createElement('span');
+    a.className='slug-link';
+    a.textContent='🔗';
+    a.title='Copy shareable link to this tab';
+    a.onclick=e=>{e.stopPropagation();copySlug('#'+tab.dataset.tab);};
+    tab.appendChild(a);
+  });
+  // Sections with data-slug
+  document.querySelectorAll('[data-slug]').forEach(sec=>{
+    const tabEl=sec.closest('[id^="tab-"]');
+    if(!tabEl)return;
+    const tab=tabEl.id.replace('tab-','');
+    const slug='#'+tab+'/'+sec.dataset.slug;
+    // Find heading inside
+    const h=sec.matches('h1,h2,h3')?sec:(sec.querySelector('h1,h2,h3'));
+    if(!h||h.querySelector('.slug-link'))return;
+    const a=document.createElement('span');
+    a.className='slug-link';
+    a.textContent='🔗';
+    a.title='Copy shareable link to this section';
+    a.onclick=e=>{e.stopPropagation();copySlug(slug);};
+    h.appendChild(a);
+  });
 }
 
 // Modal
