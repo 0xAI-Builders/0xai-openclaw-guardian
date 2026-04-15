@@ -933,6 +933,8 @@ export class BillingProxyManager {
                 endpoint: req.url,
                 method: req.method,
                 request_bytes: originalSize,
+                user_query: peek.user_query,
+                system_snippet: peek.system_snippet,
               });
               res.writeHead(429, { 'Content-Type': 'application/json', 'x-openclaw-obs-blocked': verdict.code });
               res.end(JSON.stringify({
@@ -949,7 +951,7 @@ export class BillingProxyManager {
             }
 
             const startedAtMs = Date.now();
-            const reqCtx = ctx;
+            const reqCtx = { ...ctx, user_query: peek.user_query || null, system_snippet: peek.system_snippet || null };
 
             bodyStr = processBody(bodyStr, this.config, this.logger);
             body = Buffer.from(bodyStr, 'utf8');
@@ -1016,6 +1018,7 @@ export class BillingProxyManager {
                     status: String(upRes.statusCode), error: errBody.slice(0, 500),
                     endpoint: req.url, method: req.method,
                     request_bytes: originalSize, response_bytes: Buffer.byteLength(errBody),
+                    user_query: reqCtx.user_query, system_snippet: reqCtx.system_snippet,
                   });
                 });
                 return;
@@ -1100,6 +1103,7 @@ export class BillingProxyManager {
                     endpoint: req.url, method: req.method, stream: 1,
                     request_bytes: originalSize, response_bytes: respBytes,
                     is_subscription: true,
+                    user_query: reqCtx.user_query, system_snippet: reqCtx.system_snippet,
                   });
                 });
                 return;
@@ -1134,6 +1138,7 @@ export class BillingProxyManager {
                   endpoint: req.url, method: req.method, stream: 0,
                   request_bytes: originalSize, response_bytes: originalRespBytes,
                   is_subscription: true,
+                  user_query: reqCtx.user_query, system_snippet: reqCtx.system_snippet,
                 });
               });
             });

@@ -57,7 +57,7 @@ export function* sseData(text) {
   }
 }
 
-/** Request-side: pull model, system message heuristics, session hints. */
+/** Request-side: pull model, session hints, user query and system snippet. */
 export function peekRequest(bodyStr) {
   try {
     const d = JSON.parse(bodyStr);
@@ -67,14 +67,62 @@ export function peekRequest(bodyStr) {
       max_tokens: d.max_tokens || null,
       agent_id: null,
       session_id: null,
+      user_query: null,
+      system_snippet: null,
     };
     const meta = d.metadata;
     if (meta && typeof meta === 'object') {
       out.agent_id = meta.agent_id || meta.agentId || meta.user_id || null;
       out.session_id = meta.session_id || meta.sessionId || null;
     }
+    // Last user message — the "query" the agent just received.
+    if (Array.isArray(d.messages)) {
+      for (let i = d.messages.length - 1; i >= 0; i--) {
+        const m = d.messages[i];
+        if (m?.role !== 'user') continue;
+        out.user_query = flattenContent(m.content);
+        break;
+      }
+    }
+    // System prompt first line (identity hint).
+    if (typeof d.system === 'string') {
+      out.system_snippet = d.system.split('\n').find(l => l.trim()) || null;
+    } else if (Array.isArray(d.system)) {
+      for (const s of d.system) {
+        if (typeof s === 'string') {
+          out.system_snippet = s.split('\n').find(l => l.trim()) || null;
+          break;
+        }
+        if (s?.text) {
+          out.system_snippet = String(s.text).split('\n').find(l => l.trim()) || null;
+          break;
+        }
+      }
+    }
     return out;
   } catch { return { model: null, stream: false }; }
+}
+
+function flattenContent(content) {
+  if (content == null) return null;
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return null;
+  // Collect text blocks, skip tool_result / image / thinking.
+  const parts = [];
+  for (const c of content) {
+    if (!c || typeof c !== 'object') continue;
+    if (c.type === 'text' && c.text) parts.push(String(c.text));
+    else if (c.type === 'tool_result' && c.content) {
+      if (typeof c.content === 'string') parts.push(`[tool_result] ${c.content.slice(0, 200)}`);
+      else if (Array.isArray(c.content)) {
+        const tr = c.content.find(x => x?.type === 'text');
+        if (tr?.text) parts.push(`[tool_result] ${String(tr.text).slice(0, 200)}`);
+      }
+    } else if (c.type === 'tool_use') {
+      parts.push(`[tool_use:${c.name || '?'}]`);
+    }
+  }
+  return parts.join(' ').trim() || null;
 }
 
 /**

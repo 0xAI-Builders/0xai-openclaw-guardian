@@ -47,7 +47,9 @@ CREATE TABLE IF NOT EXISTS calls (
   endpoint       TEXT,
   method         TEXT,
   stream         INTEGER DEFAULT 0,
-  is_subscription INTEGER DEFAULT 0
+  is_subscription INTEGER DEFAULT 0,
+  user_query      TEXT,
+  system_snippet  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ts ON calls(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_provider_model ON calls(provider, model);
@@ -71,23 +73,27 @@ export class CallLogger {
         this.db = new Database(this.dbPath);
         this.db.pragma('journal_mode = WAL');
         this.db.exec(SCHEMA_SQL);
-        // ALTER TABLE to add is_subscription if missing (migration for existing dbs).
-        try {
-          this.db.exec(`ALTER TABLE calls ADD COLUMN is_subscription INTEGER DEFAULT 0`);
-        } catch (e) {
-          // column already exists — ignore
+        // Migrate any missing columns (idempotent)
+        for (const [col, spec] of [
+          ['is_subscription', 'INTEGER DEFAULT 0'],
+          ['user_query', 'TEXT'],
+          ['system_snippet', 'TEXT'],
+        ]) {
+          try { this.db.exec(`ALTER TABLE calls ADD COLUMN ${col} ${spec}`); } catch {}
         }
         this._insertStmt = this.db.prepare(`
           INSERT INTO calls (
             id, ts, provider, model, agent_id, session_id, request_id,
             input_tokens, output_tokens, cache_read, cache_write,
             cost_usd, latency_ms, status, error,
-            request_bytes, response_bytes, endpoint, method, stream, is_subscription
+            request_bytes, response_bytes, endpoint, method, stream,
+            is_subscription, user_query, system_snippet
           ) VALUES (
             @id, @ts, @provider, @model, @agent_id, @session_id, @request_id,
             @input_tokens, @output_tokens, @cache_read, @cache_write,
             @cost_usd, @latency_ms, @status, @error,
-            @request_bytes, @response_bytes, @endpoint, @method, @stream, @is_subscription
+            @request_bytes, @response_bytes, @endpoint, @method, @stream,
+            @is_subscription, @user_query, @system_snippet
           )
         `);
         return;
@@ -125,6 +131,8 @@ export class CallLogger {
       method: entry.method || 'POST',
       stream: entry.stream ? 1 : 0,
       is_subscription: entry.is_subscription ? 1 : 0,
+      user_query: entry.user_query ? String(entry.user_query).slice(0, 2000) : null,
+      system_snippet: entry.system_snippet ? String(entry.system_snippet).slice(0, 500) : null,
     };
 
     if (this.db && this._insertStmt) {
