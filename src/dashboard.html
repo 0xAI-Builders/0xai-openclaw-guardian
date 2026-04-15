@@ -133,6 +133,7 @@ body{background:#11111b}
   <div class="flex border-b border-surface0 mb-5">
     <div class="tab on" data-tab="spend" onclick="switchTab('spend')" title="Aggregated spend by agent, model, source, day, and cron">Spend</div>
     <div class="tab" data-tab="calls" onclick="switchTab('calls')" title="Every individual call captured by the billing proxy with tokens, cost, latency, and billing mode">Calls</div>
+    <div class="tab" data-tab="crons" onclick="switchTab('crons')" title="Scheduled jobs running against your agents. Toggle any cron on/off here.">Crons</div>
     <div class="tab" data-tab="limits" onclick="switchTab('limits')" title="Kill-switch controls: spending caps, loop detector, global pause">Limits</div>
     <div class="tab" data-tab="settings" onclick="switchTab('settings')" title="Configure agent models, crons, and hook behavior">Settings</div>
     <div class="tab" data-tab="security" onclick="switchTab('security')" title="Security audit: exposed secrets, permissions, encryption status">Security</div>
@@ -266,6 +267,30 @@ body{background:#11111b}
     </div>
   </div>
 
+  <!-- CRONS TAB -->
+  <div id="tab-crons" style="display:none">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div class="card" title="Total scheduled jobs (enabled + disabled)"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Crons</p><p class="text-3xl font-bold mono mt-2" id="cronsTotal">0</p></div>
+      <div class="card" title="Currently active scheduled jobs"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Enabled</p><p class="text-3xl font-bold mono text-green mt-2" id="cronsEn">0</p></div>
+      <div class="card" title="Jobs whose last run finished with error state"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">With Errors</p><p class="text-3xl font-bold mono text-red mt-2" id="cronsErr">0</p></div>
+    </div>
+    <div class="card">
+      <table class="w-full text-xs">
+        <thead><tr class="text-overlay0 border-b border-surface0">
+          <th class="th" title="Human-readable cron name">Name</th>
+          <th class="th" title="Agent that will execute the job">Agent</th>
+          <th class="th" title="Cron expression or schedule ('every' for relative)">Schedule</th>
+          <th class="th" title="First 80 chars of the prompt or payload the cron sends">Payload</th>
+          <th class="th" title="When the job last executed (hover for exact time)">Last Run</th>
+          <th class="th" title="Result of the last execution">Status</th>
+          <th class="thr" title="Consecutive errors in recent executions">Errors</th>
+          <th class="th" title="Toggle this cron on/off">Toggle</th>
+        </tr></thead>
+        <tbody id="cronsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- LIMITS TAB -->
   <div id="tab-limits" style="display:none">
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -319,7 +344,7 @@ function fmtT(iso){if(!iso)return'';return new Date(iso).toLocaleString('en-US',
 // Tabs
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
-  ['spend','calls','limits','settings','security'].forEach(id=>{
+  ['spend','calls','crons','limits','settings','security'].forEach(id=>{
     const el=$('tab-'+id);
     if(!el) return;
     if(id===t){el.style.display='';el.style.animation='su .3s ease-out';}
@@ -327,6 +352,7 @@ function switchTab(t){
   });
   if(t==='security')loadSec();
   if(t==='calls')loadCalls();
+  if(t==='crons')loadCrons();
   if(t==='limits')loadLimits();
   if(t==='settings')loadSettings();
 }
@@ -657,6 +683,38 @@ async function tick(){
   }
 }
 tick();setInterval(tick,15000);
+
+// ========== CRONS tab ==========
+async function loadCrons(){
+  const r=await fetch('/api/crons').then(r=>r.json());
+  const crons=r.crons||[];
+  crons.sort((a,b)=>(+b.enabled-+a.enabled)||(a.name||'').localeCompare(b.name||''));
+  $('cronsTotal').textContent=crons.length;
+  $('cronsEn').textContent=crons.filter(c=>c.enabled).length;
+  $('cronsErr').textContent=crons.filter(c=>c.lastStatus&&c.lastStatus!=='ok'&&c.lastStatus!=='success').length;
+  $('cronsBody').innerHTML=crons.map(c=>{
+    const last=c.lastRun?new Date(typeof c.lastRun==='number'?c.lastRun:c.lastRun).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true}):'—';
+    const lastTitle=c.lastRun?new Date(typeof c.lastRun==='number'?c.lastRun:c.lastRun).toISOString():'never';
+    const statusC=c.lastStatus==='ok'?'text-green':c.lastStatus==='error'?'text-red':'text-overlay0';
+    const scheduleH=cronH(c.schedule||'');
+    const payloadCell=c.payload?`<span title="${esc(c.payload).replace(/"/g,'&quot;')}" style="cursor:help">${esc((c.payload||'').slice(0,50))}${c.payload.length>50?'…':''}</span>`:'<span class="text-overlay0">—</span>';
+    const btn=c.enabled
+      ?`<button class="fb on" style="background:#f38ba8;border-color:#f38ba8;color:#11111b" onclick="toggleCron('${c.id}',false,this)" title="Disable this cron. It will stop firing immediately.">⏸ Disable</button>`
+      :`<button class="fb" onclick="toggleCron('${c.id}',true,this)" title="Enable this cron. It will resume according to its schedule.">▶ Enable</button>`;
+    return `<tr class="tr"><td class="td font-semibold" title="${esc(c.id)}">${esc(c.name||'')}</td><td class="td">${esc(c.agent||'-')}</td><td class="td" title="${esc(c.schedule||'')}">${esc(scheduleH)}</td><td class="td" style="max-width:260px">${payloadCell}</td><td class="td" title="${esc(lastTitle)}">${esc(last)}</td><td class="td ${statusC}">${esc(c.lastStatus||'-')}</td><td class="td text-right ${c.consecutiveErrors?'text-red':''}">${c.consecutiveErrors||0}</td><td class="td">${btn}</td></tr>`;
+  }).join('')||'<tr><td colspan="8" class="td text-center text-overlay0 py-6">No crons configured</td></tr>';
+}
+async function toggleCron(id,enable,btn){
+  const original=btn.innerHTML; btn.innerHTML='…'; btn.disabled=true;
+  try{
+    const r=await fetch(`/api/crons/${id}/toggle`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enable})}).then(r=>r.json());
+    if(!r.ok)throw new Error(r.error);
+    loadCrons();
+  }catch(e){
+    btn.innerHTML=original; btn.disabled=false;
+    alert('Failed: '+e.message);
+  }
+}
 
 // ========== CALLS tab ==========
 async function loadCalls(){

@@ -82,27 +82,44 @@ function resolveGatewayToken() {
 // Cron loader
 // ---------------------------------------------------------------------------
 let CRONS = {};
-try {
-  const gwToken = resolveGatewayToken();
-  const cronEnv = gwToken ? { ...process.env, OPENCLAW_GATEWAY_TOKEN: gwToken } : process.env;
-  const out = execSync('openclaw cron list --json', { encoding: 'utf-8', timeout: 8000, env: cronEnv });
-  const data = JSON.parse(out);
-  for (const c of data.jobs || data) {
-    CRONS[c.id] = {
-      name: c.name,
-      agent: c.agentId,
-      enabled: c.enabled,
-      schedule: typeof c.schedule === 'object'
-        ? c.schedule.expr || c.schedule.expression || c.schedule.cron || ''
-        : c.schedule || '',
-      lastRun: c.state?.lastRunAt || c.state?.lastRunAtMs,
-      lastStatus: c.state?.lastRunStatus,
-    };
+function loadCrons() {
+  const next = {};
+  const jobsPath = join(OPENCLAW_DIR, 'cron', 'jobs.json');
+  try {
+    const data = JSON.parse(readFileSync(jobsPath, 'utf-8'));
+    for (const c of data.jobs || []) {
+      next[c.id] = {
+        id: c.id,
+        name: c.name,
+        agent: c.agentId,
+        enabled: !!c.enabled,
+        schedule: typeof c.schedule === 'object'
+          ? c.schedule.expr || c.schedule.expression || c.schedule.cron || ''
+          : c.schedule || '',
+        payload: c.payload?.message?.slice?.(0, 400) || null,
+        sessionKey: c.sessionKey || null,
+        lastRun: c.state?.lastRunAt || c.state?.lastRunAtMs,
+        lastStatus: c.state?.lastRunStatus,
+        consecutiveErrors: c.state?.consecutiveErrors || 0,
+        nextRunAtMs: c.state?.nextRunAtMs,
+      };
+    }
+  } catch (e) {
+    console.log('[observability] cron list failed:', e.message);
   }
-} catch (e) {
-  console.log('[observability] cron list failed:', e.message);
+  CRONS = next;
+  return next;
 }
+loadCrons();
 console.log(`[observability] ${Object.keys(CRONS).length} crons loaded`);
+
+function toggleCronById(id, enable) {
+  const gwToken = resolveGatewayToken();
+  const env = gwToken ? { ...process.env, OPENCLAW_GATEWAY_TOKEN: gwToken } : process.env;
+  const cmd = enable ? 'enable' : 'disable';
+  execSync(`openclaw cron ${cmd} ${id}`, { encoding: 'utf-8', timeout: 8000, env });
+  return loadCrons()[id] || null;
+}
 
 // ---------------------------------------------------------------------------
 // Session parsing helpers
@@ -638,6 +655,28 @@ const server = createServer(async (req, res) => {
   } else if (url.pathname === '/api/limits' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
     res.end(JSON.stringify(billingProxy.guards?.snapshot() || {}));
+
+  } else if (url.pathname === '/api/crons' && req.method === 'GET') {
+    const list = Object.values(loadCrons());
+    res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+    res.end(JSON.stringify({ crons: list }));
+
+  } else if (url.pathname.startsWith('/api/crons/') && url.pathname.endsWith('/toggle') && req.method === 'POST') {
+    const id = url.pathname.split('/')[3];
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { enable } = JSON.parse(body || '{}');
+        const result = toggleCronById(id, !!enable);
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+        res.end(JSON.stringify({ ok: true, cron: result }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
 
   } else if (url.pathname === '/api/limits' && req.method === 'POST') {
     let body = '';
