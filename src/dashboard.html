@@ -325,7 +325,10 @@ td.td:last-child{padding-right:4px !important}
         <div><label class="text-[10px] text-overlay0" title="Maximum spend allowed in the last 30 rolling days">Monthly</label><input id="capMonthly" class="inp w-full" type="number" step="0.01" placeholder="$" title="Blocks further calls once reached. Leave empty for no cap."/></div>
       </div>
       <div class="flex items-center gap-3 mb-3">
-        <label class="flex items-center gap-2 text-xs" title="When enabled, the proxy rejects every incoming request with a 429. Use to stop runaway traffic immediately."><input type="checkbox" id="capPaused"/> Pause all (emergency kill-switch)</label>
+        <label class="flex items-center gap-2 text-xs" title="When enabled, the proxy rejects every incoming request with a 429. Use to stop runaway traffic immediately. This checkbox SAVES IMMEDIATELY — no need to click Save.">
+          <input type="checkbox" id="capPaused" onchange="toggleEmergencyPause(this.checked)"/>
+          Pause all (emergency kill-switch — auto-saves)
+        </label>
       </div>
       <h2 id="limits-loop" data-slug="loop" class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2" title="Protects against runaway loops: if one session sends more than `Max calls` within `Window` seconds, the next call is blocked.">Loop Detector</h2>
       <div class="grid grid-cols-3 gap-3 mb-3">
@@ -997,6 +1000,35 @@ async function saveLimits(){
     console.error('[limits] save failed', e);
     $('limSaveStatus').innerHTML='<span style="color:#f38ba8">✗ '+String(e.message||e)+'</span>';
     showToast('Save failed: '+e.message);
+  }
+}
+
+/** Auto-save pause as soon as the checkbox toggles — emergency action must
+ *  never require a second click. Re-fetches full state afterwards so the rest
+ *  of the form stays in sync with what was persisted. */
+async function toggleEmergencyPause(desired){
+  const cb=$('capPaused');
+  // Optimistically reflect the desired state in the banner for instant feedback.
+  _currentLimits.paused=!!desired;
+  updatePauseBanner();
+  try{
+    // Merge current server state with just the paused flag to avoid nuking
+    // unrelated fields that haven't been rendered in the form yet.
+    const snap=await fetch('/api/limits').then(r=>r.json());
+    const next={ ...(snap.limits||{}), paused:!!desired, enabled:true };
+    const r=await fetch('/api/limits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)}).then(r=>r.json());
+    if(!r.ok)throw new Error(r.error||'unknown');
+    _currentLimits=r.limits||next;
+    cb.checked=!!_currentLimits.paused;
+    updatePauseBanner();
+    showToast(desired?'🛑 Kill-switch ON — all requests blocked':'✅ Kill-switch OFF — traffic resumed');
+  }catch(e){
+    console.error('[limits] emergency toggle failed',e);
+    // Revert on failure.
+    cb.checked=!desired;
+    _currentLimits.paused=!desired;
+    updatePauseBanner();
+    showToast('Failed: '+e.message);
   }
 }
 
