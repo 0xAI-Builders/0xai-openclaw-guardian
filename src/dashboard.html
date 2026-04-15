@@ -19,6 +19,19 @@ body{background:#11111b}
 .fb{background:#181825;color:#6c7086;border:1px solid #313244;border-radius:9999px;padding:5px 14px;font-size:10px;font-weight:500;font-family:inherit;cursor:pointer;transition:all .15s}
 .fb:hover{color:#a6adc8;border-color:#45475a}
 .fb.on{background:#fab387;color:#11111b;border-color:#fab387;font-weight:600}
+/* Icon button — fixed size square, no text. Used for row actions. */
+.ib{display:inline-flex !important;align-items:center !important;justify-content:center !important;width:30px;height:30px;min-width:30px;min-height:30px;padding:0 !important;margin:0;border:1px solid #313244;border-radius:6px;background:#181825;color:#a6adc8;font-size:14px;line-height:1;cursor:pointer;transition:all .15s;vertical-align:middle;box-sizing:border-box}
+.ib:hover{background:#313244;color:#cdd6f4;border-color:#45475a}
+.ib:disabled{opacity:.4;cursor:not-allowed}
+.ib.on{background:rgba(166,227,161,.15);color:#a6e3a1;border-color:#a6e3a1}
+.ib.off{background:rgba(250,179,135,.15);color:#fab387;border-color:#fab387}
+.ib.danger{background:rgba(243,139,168,.1);color:#f38ba8;border-color:rgba(243,139,168,.4)}
+.ib.danger:hover{background:#f38ba8;color:#11111b;border-color:#f38ba8}
+.row-actions{display:inline-flex !important;gap:6px;align-items:center;flex-wrap:nowrap;white-space:nowrap;min-width:72px}
+/* Normalize all .td cells — gap between columns + vertical align middle */
+td.td{padding:7px 10px 7px 0 !important;vertical-align:middle !important}
+td.td:first-child{padding-left:4px !important}
+td.td:last-child{padding-right:4px !important}
 .inp{background:#181825;color:#a6adc8;border:1px solid #313244;border-radius:8px;padding:5px 10px;font-size:10px;font-family:inherit;cursor:pointer;transition:border .15s}
 .inp:focus{outline:none;border-color:#fab387}
 .th{text-align:left;font-size:9px;font-weight:600;color:#585b70;text-transform:uppercase;letter-spacing:.8px;padding-bottom:8px}
@@ -699,11 +712,11 @@ async function loadCrons(){
     const scheduleH=cronH(c.schedule||'');
     const payloadCell=c.payload?`<span title="${esc(c.payload).replace(/"/g,'&quot;')}" style="cursor:help">${esc((c.payload||'').slice(0,50))}${c.payload.length>50?'…':''}</span>`:'<span class="text-overlay0">—</span>';
     const toggleBtn=c.enabled
-      ?`<button class="fb on" style="background:#f38ba8;border-color:#f38ba8;color:#11111b" onclick="toggleCron('${c.id}',false,this)" title="Disable this cron. It will stop firing immediately but stay in the list.">⏸</button>`
-      :`<button class="fb" onclick="toggleCron('${c.id}',true,this)" title="Enable this cron. It will resume according to its schedule.">▶</button>`;
+      ? `<button class="ib off" type="button" onclick="toggleCron('${c.id}',false,this)" title="Disable this cron. It will stop firing immediately but stay in the list." aria-label="Disable">⏸</button>`
+      : `<button class="ib on" type="button" onclick="toggleCron('${c.id}',true,this)" title="Enable this cron. It will resume according to its schedule." aria-label="Enable">▶</button>`;
     const safeName=(c.name||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    const deleteBtn=`<button class="fb" style="background:rgba(243,139,168,.12);color:#f38ba8;border-color:#f38ba8" onclick="deleteCron('${c.id}','${safeName}',this)" title="Permanently delete this cron. Cannot be undone.">🗑</button>`;
-    return `<tr class="tr"><td class="td font-semibold" title="${esc(c.id)}">${esc(c.name||'')}</td><td class="td">${esc(c.agent||'-')}</td><td class="td" title="${esc(c.schedule||'')}">${esc(scheduleH)}</td><td class="td" style="max-width:260px">${payloadCell}</td><td class="td" title="${esc(lastTitle)}">${esc(last)}</td><td class="td ${statusC}">${esc(c.lastStatus||'-')}</td><td class="td text-right ${c.consecutiveErrors?'text-red':''}">${c.consecutiveErrors||0}</td><td class="td"><div class="flex gap-1">${toggleBtn}${deleteBtn}</div></td></tr>`;
+    const deleteBtn=`<button class="ib danger" type="button" onclick="deleteCron('${c.id}','${safeName}',this)" title="Permanently delete this cron. Cannot be undone." aria-label="Delete">🗑</button>`;
+    return `<tr class="tr"><td class="td font-semibold" title="${esc(c.id)}">${esc(c.name||'')}</td><td class="td">${esc(c.agent||'-')}</td><td class="td" title="${esc(c.schedule||'')}">${esc(scheduleH)}</td><td class="td" style="max-width:260px">${payloadCell}</td><td class="td" title="${esc(lastTitle)}">${esc(last)}</td><td class="td ${statusC}">${esc(c.lastStatus||'-')}</td><td class="td text-right ${c.consecutiveErrors?'text-red':''}">${c.consecutiveErrors||0}</td><td class="td" style="white-space:nowrap"><div class="row-actions">${toggleBtn}${deleteBtn}</div></td></tr>`;
   }).join('')||'<tr><td colspan="8" class="td text-center text-overlay0 py-6">No crons configured</td></tr>';
 }
 async function toggleCron(id,enable,btn){
