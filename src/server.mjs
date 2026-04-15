@@ -168,7 +168,9 @@ function loadAllEvents() {
               }
             }
 
-            if (!msg?.usage?.cost || SKIP.has(msg.model || '')) continue;
+            // Record EVERY call that has usage (even subscription / cost=0),
+            // so the API-equivalent cost and token counts always show.
+            if (!msg?.usage || SKIP.has(msg.model || '')) continue;
 
             const tokens = {
               input:     msg.usage.input      || 0,
@@ -176,13 +178,21 @@ function loadAllEvents() {
               cacheRead: msg.usage.cacheRead  || 0,
               total:     msg.usage.totalTokens || 0,
             };
+            // Skip rows with zero tokens total — those aren't real calls.
+            if (!tokens.input && !tokens.output && !tokens.cacheRead && !tokens.total) continue;
+
+            const apiEquivCost = calcCost(msg.provider, msg.model, tokens);
+            const reportedCost = msg.usage.cost || 0;
+            const isSubscription = reportedCost === 0 && apiEquivCost > 0;
 
             events.push({
               ts: entry.timestamp,
               provider: msg.provider || '?',
               model: msg.model || '?',
               tokens,
-              cost: calcCost(msg.provider, msg.model, tokens),
+              cost: apiEquivCost,              // always API-equivalent
+              reportedCost,                    // what the session file reported
+              isSubscription,                  // flag for UI badge
               agentId,
               source,
               cronId,

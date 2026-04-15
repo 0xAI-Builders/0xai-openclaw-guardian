@@ -244,7 +244,7 @@ body{background:#11111b}
     <div class="card">
       <table class="w-full text-xs">
         <thead><tr class="text-overlay0 border-b border-surface0">
-          <th class="th">Time</th><th class="th">Provider</th><th class="th">Model</th><th class="th">Agent</th><th class="thr">In</th><th class="thr">Out</th><th class="thr">Cache</th><th class="thr">Cost</th><th class="thr">Lat</th><th class="th">Status</th>
+          <th class="th">Time</th><th class="th">Provider</th><th class="th">Model</th><th class="th">Agent</th><th class="thr">In</th><th class="thr">Out</th><th class="thr">Cache</th><th class="thr">Total</th><th class="thr">Cost</th><th class="thr">$/1k</th><th class="thr">Lat</th><th class="th">Billing</th><th class="th">Status</th>
         </tr></thead>
         <tbody id="callsBody"></tbody>
       </table>
@@ -656,8 +656,11 @@ async function loadCalls(){
     if(c.latency_ms){latSum+=c.latency_ms;latN++;}
     const t=new Date(c.ts).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
     const cache=(c.cache_read||0)+(c.cache_write||0);
+    const total=(c.input_tokens||0)+(c.output_tokens||0)+cache;
+    const per1k=total?(c.cost_usd||0)/total*1000:0;
     const stColor=c.status==='200'?'text-green':(c.status==='blocked'?'text-red':'text-yellow');
-    return `<tr class="tr"><td class="td">${esc(t)}</td><td class="td">${esc(c.provider||'')}</td><td class="td">${esc(c.model||'')}</td><td class="td">${esc(c.agent_id||'-')}</td><td class="td text-right">${F(c.input_tokens||0)}</td><td class="td text-right">${F(c.output_tokens||0)}</td><td class="td text-right">${F(cache)}</td><td class="td text-right text-peach">${money(c.cost_usd||0)}</td><td class="td text-right">${c.latency_ms||0}ms</td><td class="td ${stColor}">${esc(c.status||'')}</td></tr>`;
+    const billingBadge=c.is_subscription?'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(166,227,161,.15);color:#a6e3a1">SUB</span>':'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(137,180,250,.15);color:#89b4fa">API</span>';
+    return `<tr class="tr"><td class="td">${esc(t)}</td><td class="td">${esc(c.provider||'')}</td><td class="td">${esc(c.model||'')}</td><td class="td">${esc(c.agent_id||'-')}</td><td class="td text-right">${F(c.input_tokens||0)}</td><td class="td text-right">${F(c.output_tokens||0)}</td><td class="td text-right">${F(cache)}</td><td class="td text-right font-semibold">${F(total)}</td><td class="td text-right text-peach">${money(c.cost_usd||0)}</td><td class="td text-right text-overlay0">${per1k?'$'+per1k.toFixed(4):'-'}</td><td class="td text-right">${c.latency_ms||0}ms</td><td class="td">${billingBadge}</td><td class="td ${stColor}">${esc(c.status||'')}</td></tr>`;
   }).join('');
   $('callsBody').innerHTML=rows||'<tr><td colspan="10" class="td text-center text-overlay0 py-6">No calls yet</td></tr>';
   $('callsCost').textContent=money(totalCost);

@@ -1096,6 +1096,7 @@ export class BillingProxyManager {
                     status: String(upRes.statusCode || 200),
                     endpoint: req.url, method: req.method, stream: 1,
                     request_bytes: originalSize, response_bytes: respBytes,
+                    is_subscription: true,
                   });
                 });
                 return;
@@ -1129,6 +1130,7 @@ export class BillingProxyManager {
                   status: String(upRes.statusCode || 200),
                   endpoint: req.url, method: req.method, stream: 0,
                   request_bytes: originalSize, response_bytes: originalRespBytes,
+                  is_subscription: true,
                 });
               });
             });
