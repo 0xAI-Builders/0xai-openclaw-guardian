@@ -131,11 +131,11 @@ body{background:#11111b}
 
   <!-- Tabs -->
   <div class="flex border-b border-surface0 mb-5">
-    <div class="tab on" data-tab="spend" onclick="switchTab('spend')">Spend</div>
-    <div class="tab" data-tab="calls" onclick="switchTab('calls')">Calls</div>
-    <div class="tab" data-tab="limits" onclick="switchTab('limits')">Limits</div>
-    <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
-    <div class="tab" data-tab="security" onclick="switchTab('security')">Security</div>
+    <div class="tab on" data-tab="spend" onclick="switchTab('spend')" title="Aggregated spend by agent, model, source, day, and cron">Spend</div>
+    <div class="tab" data-tab="calls" onclick="switchTab('calls')" title="Every individual call captured by the billing proxy with tokens, cost, latency, and billing mode">Calls</div>
+    <div class="tab" data-tab="limits" onclick="switchTab('limits')" title="Kill-switch controls: spending caps, loop detector, global pause">Limits</div>
+    <div class="tab" data-tab="settings" onclick="switchTab('settings')" title="Configure agent models, crons, and hook behavior">Settings</div>
+    <div class="tab" data-tab="security" onclick="switchTab('security')" title="Security audit: exposed secrets, permissions, encryption status">Security</div>
   </div>
 
   <!-- SPEND TAB -->
@@ -230,21 +230,35 @@ body{background:#11111b}
 
   <!-- CALLS TAB -->
   <div id="tab-calls" style="display:none">
-    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Calls</p><p class="text-3xl font-bold mono mt-2" id="callsTotal">0</p></div>
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Cost</p><p class="text-3xl font-bold mono text-peach mt-2" id="callsCost">$0</p></div>
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Avg Latency</p><p class="text-3xl font-bold mono text-blue mt-2" id="callsLat">0ms</p></div>
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Blocked</p><p class="text-3xl font-bold mono text-red mt-2" id="callsBlocked">0</p></div>
+    <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
+      <div class="card" title="Number of API calls recorded in the current filter window"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Calls</p><p class="text-3xl font-bold mono mt-2" id="callsTotal">0</p></div>
+      <div class="card" title="Sum of API-equivalent cost across all listed calls, in USD. For subscription plans this is the value you would pay at pay-per-token rates."><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Cost</p><p class="text-3xl font-bold mono text-peach mt-2" id="callsCost">$0</p></div>
+      <div class="card" title="Total tokens across all listed calls: input + output + cache"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Tokens</p><p class="text-3xl font-bold mono text-teal mt-2" id="callsTok">0</p></div>
+      <div class="card" title="Average round-trip latency in milliseconds"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Avg Latency</p><p class="text-3xl font-bold mono text-blue mt-2" id="callsLat">0ms</p></div>
+      <div class="card" title="Requests rejected before they reached the provider (killed by guards)"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Blocked</p><p class="text-3xl font-bold mono text-red mt-2" id="callsBlocked">0</p></div>
     </div>
     <div class="flex flex-wrap gap-2 mb-3">
-      <select id="callProv" class="inp"><option value="">All providers</option><option>anthropic</option><option>google</option><option>openai</option></select>
-      <input id="callModel" class="inp" placeholder="model filter" />
-      <button class="fb" onclick="loadCalls()">Refresh</button>
+      <select id="callProv" class="inp" title="Filter by provider (anthropic, google, openai, etc.)"><option value="">All providers</option><option>anthropic</option><option>google</option><option>openai</option></select>
+      <input id="callModel" class="inp" placeholder="model filter" title="Substring match on the model ID, e.g. sonnet or opus-4-6" />
+      <select id="callBilling" class="inp" title="Subscription = consumed from a Claude Max / equivalent plan. API = direct pay-per-token."><option value="">All billing</option><option value="sub">Subscription only</option><option value="api">API only</option></select>
+      <button class="fb" onclick="loadCalls()" title="Re-fetch calls from the server">Refresh</button>
     </div>
     <div class="card">
       <table class="w-full text-xs">
         <thead><tr class="text-overlay0 border-b border-surface0">
-          <th class="th">Time</th><th class="th">Provider</th><th class="th">Model</th><th class="th">Agent</th><th class="thr">In</th><th class="thr">Out</th><th class="thr">Cache</th><th class="thr">Total</th><th class="thr">Cost</th><th class="thr">$/1k</th><th class="thr">Lat</th><th class="th">Billing</th><th class="th">Status</th>
+          <th class="th" title="When the call was initiated (local time)">Time</th>
+          <th class="th" title="AI provider (anthropic, google, openai, ...)">Provider</th>
+          <th class="th" title="Model identifier returned by the provider">Model</th>
+          <th class="th" title="OpenClaw agent that initiated the call (derived from request body / session context; dash means unknown)">Agent</th>
+          <th class="thr" title="Input tokens: prompt sent to the model (excludes cache hits)">In</th>
+          <th class="thr" title="Output tokens: tokens generated by the model">Out</th>
+          <th class="thr" title="Cache tokens: reads and writes from prompt caching (usually the system prompt + tools)">Cache</th>
+          <th class="thr" title="Total tokens (In + Out + Cache) for this single call">Total</th>
+          <th class="thr" title="API-equivalent cost at pay-per-token pricing. Subscription calls are still priced here so you can see the economic value of the plan.">Cost</th>
+          <th class="thr" title="Cost per 1,000 total tokens — useful for spotting unusually expensive calls">$/1k</th>
+          <th class="thr" title="Response time in milliseconds from proxy receive to upstream complete">Lat</th>
+          <th class="th" title="SUB = consumed from your subscription. API = pay-per-token. Both still count tokens, only billing differs.">Billing</th>
+          <th class="th" title="HTTP status (200 OK, 429 blocked, 5xx upstream error)">Status</th>
         </tr></thead>
         <tbody id="callsBody"></tbody>
       </table>
@@ -254,27 +268,27 @@ body{background:#11111b}
   <!-- LIMITS TAB -->
   <div id="tab-limits" style="display:none">
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Spend Today</p><p class="text-3xl font-bold mono mt-2" id="limSpendToday">$0</p><p class="text-[10px] text-overlay0 mt-1" id="limPctDaily">—</p></div>
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Week</p><p class="text-3xl font-bold mono mt-2" id="limSpendWeek">$0</p></div>
-      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Month</p><p class="text-3xl font-bold mono mt-2" id="limSpendMonth">$0</p></div>
+      <div class="card" title="API-equivalent spend since midnight (local time). Also applies to subscription calls."><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Spend Today</p><p class="text-3xl font-bold mono mt-2" id="limSpendToday">$0</p><p class="text-[10px] text-overlay0 mt-1" id="limPctDaily">—</p></div>
+      <div class="card" title="API-equivalent spend over the last 7 rolling days"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Week</p><p class="text-3xl font-bold mono mt-2" id="limSpendWeek">$0</p></div>
+      <div class="card" title="API-equivalent spend over the last 30 rolling days"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Month</p><p class="text-3xl font-bold mono mt-2" id="limSpendMonth">$0</p></div>
     </div>
     <div class="card mb-4">
-      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Global Caps (USD)</h2>
+      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3" title="Hard caps enforced by the proxy. Exceeding any cap returns HTTP 429 and blocks the upstream request.">Global Caps (USD)</h2>
       <div class="grid grid-cols-3 gap-3 mb-3">
-        <div><label class="text-[10px] text-overlay0">Daily</label><input id="capDaily" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
-        <div><label class="text-[10px] text-overlay0">Weekly</label><input id="capWeekly" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
-        <div><label class="text-[10px] text-overlay0">Monthly</label><input id="capMonthly" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
+        <div><label class="text-[10px] text-overlay0" title="Maximum spend allowed per calendar day (midnight to midnight)">Daily</label><input id="capDaily" class="inp w-full" type="number" step="0.01" placeholder="$" title="Blocks further calls once reached. Leave empty for no cap."/></div>
+        <div><label class="text-[10px] text-overlay0" title="Maximum spend allowed in the last 7 rolling days">Weekly</label><input id="capWeekly" class="inp w-full" type="number" step="0.01" placeholder="$" title="Blocks further calls once reached. Leave empty for no cap."/></div>
+        <div><label class="text-[10px] text-overlay0" title="Maximum spend allowed in the last 30 rolling days">Monthly</label><input id="capMonthly" class="inp w-full" type="number" step="0.01" placeholder="$" title="Blocks further calls once reached. Leave empty for no cap."/></div>
       </div>
       <div class="flex items-center gap-3 mb-3">
-        <label class="flex items-center gap-2 text-xs"><input type="checkbox" id="capPaused"/> Pause all (kill-switch)</label>
+        <label class="flex items-center gap-2 text-xs" title="When enabled, the proxy rejects every incoming request with a 429. Use to stop runaway traffic immediately."><input type="checkbox" id="capPaused"/> Pause all (emergency kill-switch)</label>
       </div>
-      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2">Loop Detector</h2>
+      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2" title="Protects against runaway loops: if one session sends more than `Max calls` within `Window` seconds, the next call is blocked.">Loop Detector</h2>
       <div class="grid grid-cols-3 gap-3 mb-3">
-        <div><label class="text-[10px] text-overlay0">Window (sec)</label><input id="loopWin" class="inp w-full" type="number" placeholder="60"/></div>
-        <div><label class="text-[10px] text-overlay0">Max calls</label><input id="loopMax" class="inp w-full" type="number" placeholder="30"/></div>
-        <div class="flex items-end"><label class="text-xs"><input type="checkbox" id="loopEn"/> Enabled</label></div>
+        <div><label class="text-[10px] text-overlay0" title="Sliding window size, in seconds">Window (sec)</label><input id="loopWin" class="inp w-full" type="number" placeholder="60" title="Rolling time window in seconds used to count per-session calls"/></div>
+        <div><label class="text-[10px] text-overlay0" title="Maximum calls allowed per session within the window">Max calls</label><input id="loopMax" class="inp w-full" type="number" placeholder="30" title="Block further calls from a session once this many have been made within the window"/></div>
+        <div class="flex items-end"><label class="text-xs" title="Enable or disable the loop detector globally"><input type="checkbox" id="loopEn"/> Enabled</label></div>
       </div>
-      <button class="fb on" onclick="saveLimits()">Save Limits</button>
+      <button class="fb on" onclick="saveLimits()" title="Write changes to ~/.openclaw/observability/limits.json. The proxy hot-reloads on file mtime change.">Save Limits</button>
       <span id="limSaveStatus" class="text-[10px] text-overlay0 ml-2"></span>
     </div>
   </div>
@@ -645,27 +659,37 @@ tick();setInterval(tick,15000);
 
 // ========== CALLS tab ==========
 async function loadCalls(){
-  const prov=$('callProv').value, mdl=$('callModel').value;
+  const prov=$('callProv').value, mdl=$('callModel').value, bill=$('callBilling').value;
   const q=new URLSearchParams({limit:200});
   if(prov)q.set('provider',prov); if(mdl)q.set('model',mdl);
   const r=await fetch('/api/calls?'+q).then(r=>r.json());
-  $('callsTotal').textContent=r.total||0;
-  let totalCost=0,latSum=0,latN=0;
-  const rows=r.items.map(c=>{
-    totalCost+=c.cost_usd||0;
-    if(c.latency_ms){latSum+=c.latency_ms;latN++;}
-    const t=new Date(c.ts).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+  let items=r.items||[];
+  if(bill==='sub') items=items.filter(c=>c.is_subscription);
+  if(bill==='api') items=items.filter(c=>!c.is_subscription);
+  $('callsTotal').textContent=items.length;
+  let totalCost=0,totalTok=0,latSum=0,latN=0;
+  const rows=items.map(c=>{
+    const cost=c.cost_usd||0;
+    totalCost+=cost;
     const cache=(c.cache_read||0)+(c.cache_write||0);
     const total=(c.input_tokens||0)+(c.output_tokens||0)+cache;
-    const per1k=total?(c.cost_usd||0)/total*1000:0;
+    totalTok+=total;
+    if(c.latency_ms){latSum+=c.latency_ms;latN++;}
+    const t=new Date(c.ts).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+    const per1k=total?cost/total*1000:0;
     const stColor=c.status==='200'?'text-green':(c.status==='blocked'?'text-red':'text-yellow');
-    const billingBadge=c.is_subscription?'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(166,227,161,.15);color:#a6e3a1">SUB</span>':'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(137,180,250,.15);color:#89b4fa">API</span>';
-    return `<tr class="tr"><td class="td">${esc(t)}</td><td class="td">${esc(c.provider||'')}</td><td class="td">${esc(c.model||'')}</td><td class="td">${esc(c.agent_id||'-')}</td><td class="td text-right">${F(c.input_tokens||0)}</td><td class="td text-right">${F(c.output_tokens||0)}</td><td class="td text-right">${F(cache)}</td><td class="td text-right font-semibold">${F(total)}</td><td class="td text-right text-peach">${money(c.cost_usd||0)}</td><td class="td text-right text-overlay0">${per1k?'$'+per1k.toFixed(4):'-'}</td><td class="td text-right">${c.latency_ms||0}ms</td><td class="td">${billingBadge}</td><td class="td ${stColor}">${esc(c.status||'')}</td></tr>`;
+    const billingBadge=c.is_subscription
+      ?'<span title="Consumed from a subscription plan (e.g. Claude Max). No direct charge; cost shown is API-equivalent." style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(166,227,161,.15);color:#a6e3a1">SUB</span>'
+      :'<span title="Billed pay-per-token at the provider API rate." style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(137,180,250,.15);color:#89b4fa">API</span>';
+    const agentCell=c.agent_id
+      ?`<span title="Agent: ${esc(c.agent_id)}">${esc(c.agent_id)}</span>`
+      :`<span class="text-overlay0" title="Agent could not be derived from request body/headers. Set X-OpenClaw-Agent-Id header in your client to label calls.">unknown</span>`;
+    return `<tr class="tr"><td class="td" title="Call timestamp (local)">${esc(t)}</td><td class="td" title="Provider">${esc(c.provider||'')}</td><td class="td" title="Model">${esc(c.model||'')}</td><td class="td">${agentCell}</td><td class="td text-right" title="Input prompt tokens">${F(c.input_tokens||0)}</td><td class="td text-right" title="Generated output tokens">${F(c.output_tokens||0)}</td><td class="td text-right" title="Cache read + cache write tokens">${F(cache)}</td><td class="td text-right font-semibold" title="Input + Output + Cache">${F(total)}</td><td class="td text-right text-peach" title="API-equivalent cost in USD">${money(cost)}</td><td class="td text-right text-overlay0" title="Cost per 1,000 total tokens">${per1k?'$'+per1k.toFixed(4):'-'}</td><td class="td text-right" title="Round-trip latency">${c.latency_ms||0}ms</td><td class="td">${billingBadge}</td><td class="td ${stColor}" title="HTTP status">${esc(c.status||'')}</td></tr>`;
   }).join('');
-  $('callsBody').innerHTML=rows||'<tr><td colspan="10" class="td text-center text-overlay0 py-6">No calls yet</td></tr>';
+  $('callsBody').innerHTML=rows||'<tr><td colspan="13" class="td text-center text-overlay0 py-6">No calls yet</td></tr>';
   $('callsCost').textContent=money(totalCost);
+  $('callsTok').textContent=F(totalTok);
   $('callsLat').textContent=latN?Math.round(latSum/latN)+'ms':'—';
-  // blocked count from billing-proxy health
   const hp=await fetch('/api/billing-proxy').then(r=>r.json()).catch(()=>({}));
   $('callsBlocked').textContent=hp.blockedCount||0;
 }

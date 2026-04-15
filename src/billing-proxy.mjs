@@ -909,10 +909,13 @@ export class BillingProxyManager {
             const peek = peekRequest(bodyStr);
             const agentIdHeader = req.headers['x-openclaw-agent-id'] || req.headers['x-agent-id'] || null;
             const sessionIdHeader = req.headers['x-openclaw-session-id'] || req.headers['x-session-id'] || null;
+            // OpenClaw doesn't ship a dedicated header — we derive the agent
+            // from the system prompt (identity block) or x-stainless-helper headers.
+            const derivedAgent = deriveAgentFromBody(bodyStr, this.openclawDir) || derivedAgentFromHeaders(req.headers);
             const ctx = {
               provider: 'anthropic',
               model: peek.model,
-              agent_id: peek.agent_id || agentIdHeader,
+              agent_id: peek.agent_id || agentIdHeader || derivedAgent,
               session_id: peek.session_id || sessionIdHeader,
             };
             const verdict = this.guards.check(ctx);
@@ -1222,4 +1225,58 @@ export class BillingProxyManager {
 
 export function createBillingProxyManager(options) {
   return new BillingProxyManager(options);
+}
+
+// Known agent ids — loaded lazily from openclaw.json. Any extraction below
+// is only accepted if the resolved name is in this set (prevents false
+// positives like "workspace-relative" being matched as an agent).
+let _agentWhitelist = null;
+function loadAgentWhitelist(openclawDir) {
+  if (_agentWhitelist) return _agentWhitelist;
+  try {
+    const cfg = JSON.parse(readFileSync(join(openclawDir, 'openclaw.json'), 'utf8'));
+    const ids = (cfg.agents?.list || []).map(a => a.id).filter(Boolean);
+    _agentWhitelist = new Set(ids.map(x => x.toLowerCase()));
+  } catch {
+    _agentWhitelist = new Set(['main', 'signara-brain', 'abundia', 'anhelo', 'aura-eterna', 'conquista', 'documenter', 'qubit']);
+  }
+  return _agentWhitelist;
+}
+
+/**
+ * Best-effort agent id extraction from a Claude request body.
+ * Only returns values in the whitelist, to avoid false positives.
+ */
+function deriveAgentFromBody(bodyStr, openclawDir) {
+  if (!bodyStr) return null;
+  const allowed = loadAgentWhitelist(openclawDir);
+  const patterns = [
+    /"name"\s*:\s*"([a-z0-9_-]{2,40})"[^}]{0,200}"emoji"/i,       // identity block
+    /\\n\s*Agent[- ]?(?:ID)?:\s*([a-z0-9_-]{2,40})/i,              // "Agent: main"
+    /\/workspace-([a-z0-9_-]{2,40})(?:\/|\\)/,                      // path-style
+    /["\s]agent[_-]?id["\s:]+["]([a-z0-9_-]{2,40})["]/i,           // json-ish
+  ];
+  for (const re of patterns) {
+    const m = bodyStr.match(re);
+    if (m && m[1]) {
+      const id = m[1].toLowerCase();
+      if (allowed.has(id)) return id;
+    }
+  }
+  // Fallback: any whitelisted name that appears near an identity/system tag.
+  for (const id of allowed) {
+    const re = new RegExp(`["\\s](${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')})["\\s]`, 'i');
+    if (re.test(bodyStr)) return id;
+  }
+  return null;
+}
+
+function derivedAgentFromHeaders(headers = {}) {
+  const ua = headers['user-agent'] || '';
+  const h = headers['x-stainless-helper-method'] || headers['x-openclaw-helper'] || '';
+  const combo = `${ua} ${h}`.toLowerCase();
+  for (const name of ['main', 'signara-brain', 'abundia', 'anhelo', 'aura-eterna', 'conquista', 'documenter', 'qubit']) {
+    if (combo.includes(name)) return name;
+  }
+  return null;
 }
