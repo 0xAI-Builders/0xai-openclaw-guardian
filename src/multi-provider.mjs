@@ -26,41 +26,9 @@ export const PROVIDERS = {
   ollama:     { host: '127.0.0.1',                      port: 11434, protocol: 'http', transport: http, local: true },
 };
 
-// --- Pricing tables (USD per million tokens) -------------------------------
-// Intentionally minimal — noosphere has the full catalog; we just cover the
-// most common models so the dashboard shows real $ instead of 0. Ollama and
-// local providers are priced at 0 by design.
-export const PRICING = Object.freeze({
-  // OpenAI
-  'gpt-4o':               { input: 2.5,  output: 10 },
-  'gpt-4o-mini':          { input: 0.15, output: 0.6 },
-  'gpt-4.1':              { input: 2.0,  output: 8 },
-  'gpt-4.1-mini':         { input: 0.4,  output: 1.6 },
-  'gpt-5':                { input: 1.25, output: 10 },
-  'gpt-5-mini':           { input: 0.25, output: 2 },
-  'o1':                   { input: 15,   output: 60 },
-  'o3':                   { input: 10,   output: 40 },
-  'o3-mini':              { input: 1.1,  output: 4.4 },
-  // Google
-  'gemini-2.5-pro':       { input: 1.25, output: 10 },
-  'gemini-2.5-flash':     { input: 0.075,output: 0.3 },
-  'gemini-3.1-pro':       { input: 2.0,  output: 8 },
-  'gemini-3.1-pro-preview':{input: 2.0,  output: 8 },
-  // Anthropic already handled in usage-parser.mjs ANTHROPIC_PRICING
-  // Groq / Cerebras / OpenRouter — passthrough, rely on pricing table fallback
-  'llama-3.3-70b':        { input: 0.59, output: 0.79 },
-  'llama-3.1-8b':         { input: 0.05, output: 0.08 },
-  'mixtral-8x7b':         { input: 0.24, output: 0.24 },
-  // xAI
-  'grok-4':               { input: 5,    output: 15 },
-  'grok-3':               { input: 3,    output: 15 },
-});
-
-export function priceFor(provider, model) {
-  if (provider === 'ollama') return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  if (!model) return null;
-  return PRICING[model] || PRICING[model.toLowerCase()] || null;
-}
+// Pricing comes from pricing.mjs (noosphere-backed catalog of 45+ models plus
+// fallback table). billing-proxy resolves cost via calcCost(provider,model,tokens)
+// — this module no longer maintains its own table.
 
 // --- Usage parsing per provider --------------------------------------------
 /**

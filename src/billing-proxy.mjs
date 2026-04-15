@@ -19,15 +19,25 @@ import {
   parseAnthropicNonStream,
   parseAnthropicSseChunk,
   sseData,
-  computeCost,
-  ANTHROPIC_PRICING,
 } from './usage-parser.mjs';
 import {
   PROVIDERS as MP_PROVIDERS,
-  priceFor as mpPriceFor,
   peekProviderRequest,
   forwardToProvider,
 } from './multi-provider.mjs';
+import { calcCost } from './pricing.mjs';
+
+/** Adapter: turn multi-provider usage shape (snake_case) into pricing.mjs shape. */
+function costFor(provider, model, usage = {}) {
+  if (!model) return 0;
+  return calcCost(provider, model, {
+    input: usage.input_tokens || 0,
+    output: usage.output_tokens || 0,
+    cacheRead: usage.cache_read || 0,
+    cacheWrite: usage.cache_write || 0,
+    total: (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_read || 0),
+  });
+}
 
 const MULTI_PREFIXES = ['/openai', '/google', '/openrouter', '/ollama', '/groq', '/cerebras', '/xai', '/huggingface'];
 
@@ -930,8 +940,7 @@ export class BillingProxyManager {
               forwardToProvider({
                 providerKey, subPath, req, res, body, logger: this.logger,
                 onDone: (result) => {
-                  const p = mpPriceFor(providerKey, result.model) || {};
-                  const cost = computeCost(result.model, result.usage, { [result.model]: p });
+                  const cost = costFor(providerKey, result.model, result.usage);
                   this.callLogger.record({
                     ts: Date.now() - result.latencyMs, provider: providerKey,
                     model: result.model,
@@ -1148,7 +1157,7 @@ export class BillingProxyManager {
                     res.write(transformEvent(pending));
                   }
                   res.end();
-                  const cost = computeCost(usageAcc.model || reqCtx.model, usageAcc, ANTHROPIC_PRICING);
+                  const cost = costFor('anthropic', usageAcc.model || reqCtx.model, usageAcc);
                   this.callLogger.record({
                     ts: startedAtMs, provider: 'anthropic',
                     model: usageAcc.model || reqCtx.model,
@@ -1183,7 +1192,7 @@ export class BillingProxyManager {
                 nextHeaders['content-length'] = Buffer.byteLength(respBody);
                 res.writeHead(upRes.statusCode || 200, nextHeaders);
                 res.end(respBody);
-                const cost = computeCost(usage.model || reqCtx.model, usage, ANTHROPIC_PRICING);
+                const cost = costFor('anthropic', usage.model || reqCtx.model, usage);
                 this.callLogger.record({
                   ts: startedAtMs, provider: 'anthropic',
                   model: usage.model || reqCtx.model,

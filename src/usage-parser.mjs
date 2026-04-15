@@ -125,31 +125,5 @@ function flattenContent(content) {
   return parts.join(' ').trim() || null;
 }
 
-/**
- * Compute cost with explicit per-million-token pricing.
- * If pricing table doesn't know the model, returns 0 (caller should log warning).
- *
- * pricing is: { modelId: { input: $/Mtok, output: $/Mtok, cacheRead?: $/Mtok, cacheWrite?: $/Mtok } }
- */
-export function computeCost(model, usage, pricing) {
-  if (!model || !pricing) return 0;
-  const p = pricing[model] || pricing[model?.toLowerCase()] || null;
-  if (!p) return 0;
-  const perMil = (n, r) => ((n || 0) * (r || 0)) / 1_000_000;
-  const base =
-    perMil(usage.input_tokens, p.input) +
-    perMil(usage.output_tokens, p.output) +
-    perMil(usage.cache_read, p.cacheRead ?? p.input * 0.1) +
-    perMil(usage.cache_write, p.cacheWrite ?? p.input * 1.25);
-  return base;
-}
-
-/** Default Anthropic pricing table (USD per million tokens). */
-export const ANTHROPIC_PRICING = Object.freeze({
-  'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-opus-4-6-20251028': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-sonnet-4-6-20251028': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-  'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
-});
+// Cost calculation lives in pricing.mjs (noosphere-backed).
+// billing-proxy imports calcCost directly; this module is parsing-only.
