@@ -284,7 +284,7 @@ body{background:#11111b}
           <th class="th" title="When the job last executed (hover for exact time)">Last Run</th>
           <th class="th" title="Result of the last execution">Status</th>
           <th class="thr" title="Consecutive errors in recent executions">Errors</th>
-          <th class="th" title="Toggle this cron on/off">Toggle</th>
+          <th class="th" title="Enable/disable or permanently delete this cron">Actions</th>
         </tr></thead>
         <tbody id="cronsBody"></tbody>
       </table>
@@ -698,10 +698,12 @@ async function loadCrons(){
     const statusC=c.lastStatus==='ok'?'text-green':c.lastStatus==='error'?'text-red':'text-overlay0';
     const scheduleH=cronH(c.schedule||'');
     const payloadCell=c.payload?`<span title="${esc(c.payload).replace(/"/g,'&quot;')}" style="cursor:help">${esc((c.payload||'').slice(0,50))}${c.payload.length>50?'…':''}</span>`:'<span class="text-overlay0">—</span>';
-    const btn=c.enabled
-      ?`<button class="fb on" style="background:#f38ba8;border-color:#f38ba8;color:#11111b" onclick="toggleCron('${c.id}',false,this)" title="Disable this cron. It will stop firing immediately.">⏸ Disable</button>`
-      :`<button class="fb" onclick="toggleCron('${c.id}',true,this)" title="Enable this cron. It will resume according to its schedule.">▶ Enable</button>`;
-    return `<tr class="tr"><td class="td font-semibold" title="${esc(c.id)}">${esc(c.name||'')}</td><td class="td">${esc(c.agent||'-')}</td><td class="td" title="${esc(c.schedule||'')}">${esc(scheduleH)}</td><td class="td" style="max-width:260px">${payloadCell}</td><td class="td" title="${esc(lastTitle)}">${esc(last)}</td><td class="td ${statusC}">${esc(c.lastStatus||'-')}</td><td class="td text-right ${c.consecutiveErrors?'text-red':''}">${c.consecutiveErrors||0}</td><td class="td">${btn}</td></tr>`;
+    const toggleBtn=c.enabled
+      ?`<button class="fb on" style="background:#f38ba8;border-color:#f38ba8;color:#11111b" onclick="toggleCron('${c.id}',false,this)" title="Disable this cron. It will stop firing immediately but stay in the list.">⏸</button>`
+      :`<button class="fb" onclick="toggleCron('${c.id}',true,this)" title="Enable this cron. It will resume according to its schedule.">▶</button>`;
+    const safeName=(c.name||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const deleteBtn=`<button class="fb" style="background:rgba(243,139,168,.12);color:#f38ba8;border-color:#f38ba8" onclick="deleteCron('${c.id}','${safeName}',this)" title="Permanently delete this cron. Cannot be undone.">🗑</button>`;
+    return `<tr class="tr"><td class="td font-semibold" title="${esc(c.id)}">${esc(c.name||'')}</td><td class="td">${esc(c.agent||'-')}</td><td class="td" title="${esc(c.schedule||'')}">${esc(scheduleH)}</td><td class="td" style="max-width:260px">${payloadCell}</td><td class="td" title="${esc(lastTitle)}">${esc(last)}</td><td class="td ${statusC}">${esc(c.lastStatus||'-')}</td><td class="td text-right ${c.consecutiveErrors?'text-red':''}">${c.consecutiveErrors||0}</td><td class="td"><div class="flex gap-1">${toggleBtn}${deleteBtn}</div></td></tr>`;
   }).join('')||'<tr><td colspan="8" class="td text-center text-overlay0 py-6">No crons configured</td></tr>';
 }
 async function toggleCron(id,enable,btn){
@@ -713,6 +715,18 @@ async function toggleCron(id,enable,btn){
   }catch(e){
     btn.innerHTML=original; btn.disabled=false;
     alert('Failed: '+e.message);
+  }
+}
+async function deleteCron(id,name,btn){
+  if(!confirm(`Delete cron "${name}" permanently?\n\nThis cannot be undone.`)) return;
+  const original=btn.innerHTML; btn.innerHTML='…'; btn.disabled=true;
+  try{
+    const r=await fetch(`/api/crons/${id}`,{method:'DELETE'}).then(r=>r.json());
+    if(!r.ok)throw new Error(r.error);
+    loadCrons();
+  }catch(e){
+    btn.innerHTML=original; btn.disabled=false;
+    alert('Delete failed: '+e.message);
   }
 }
 

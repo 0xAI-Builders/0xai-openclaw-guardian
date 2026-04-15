@@ -121,6 +121,14 @@ function toggleCronById(id, enable) {
   return loadCrons()[id] || null;
 }
 
+function deleteCronById(id) {
+  const gwToken = resolveGatewayToken();
+  const env = gwToken ? { ...process.env, OPENCLAW_GATEWAY_TOKEN: gwToken } : process.env;
+  execSync(`openclaw cron rm ${id}`, { encoding: 'utf-8', timeout: 8000, env });
+  loadCrons();
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Session parsing helpers
 // ---------------------------------------------------------------------------
@@ -607,7 +615,7 @@ const server = createServer(async (req, res) => {
   // CORS headers for all API responses
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
@@ -676,6 +684,18 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ ok: false, error: e.message }));
       }
     });
+    return;
+
+  } else if (url.pathname.startsWith('/api/crons/') && req.method === 'DELETE') {
+    const id = url.pathname.split('/')[3];
+    try {
+      deleteCronById(id);
+      res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+      res.end(JSON.stringify({ ok: true, id }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
+    }
     return;
 
   } else if (url.pathname === '/api/limits' && req.method === 'POST') {
