@@ -132,6 +132,8 @@ body{background:#11111b}
   <!-- Tabs -->
   <div class="flex border-b border-surface0 mb-5">
     <div class="tab on" data-tab="spend" onclick="switchTab('spend')">Spend</div>
+    <div class="tab" data-tab="calls" onclick="switchTab('calls')">Calls</div>
+    <div class="tab" data-tab="limits" onclick="switchTab('limits')">Limits</div>
     <div class="tab" data-tab="settings" onclick="switchTab('settings')">Settings</div>
     <div class="tab" data-tab="security" onclick="switchTab('security')">Security</div>
   </div>
@@ -225,6 +227,57 @@ body{background:#11111b}
     </div>
     <div class="card mb-4"><h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Security Findings</h2><div id="secFindings" class="space-y-2"></div></div>
   </div>
+
+  <!-- CALLS TAB -->
+  <div id="tab-calls" style="display:none">
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Calls</p><p class="text-3xl font-bold mono mt-2" id="callsTotal">0</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Total Cost</p><p class="text-3xl font-bold mono text-peach mt-2" id="callsCost">$0</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Avg Latency</p><p class="text-3xl font-bold mono text-blue mt-2" id="callsLat">0ms</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Blocked</p><p class="text-3xl font-bold mono text-red mt-2" id="callsBlocked">0</p></div>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <select id="callProv" class="inp"><option value="">All providers</option><option>anthropic</option><option>google</option><option>openai</option></select>
+      <input id="callModel" class="inp" placeholder="model filter" />
+      <button class="fb" onclick="loadCalls()">Refresh</button>
+    </div>
+    <div class="card">
+      <table class="w-full text-xs">
+        <thead><tr class="text-overlay0 border-b border-surface0">
+          <th class="th">Time</th><th class="th">Provider</th><th class="th">Model</th><th class="th">Agent</th><th class="thr">In</th><th class="thr">Out</th><th class="thr">Cache</th><th class="thr">Cost</th><th class="thr">Lat</th><th class="th">Status</th>
+        </tr></thead>
+        <tbody id="callsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- LIMITS TAB -->
+  <div id="tab-limits" style="display:none">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Spend Today</p><p class="text-3xl font-bold mono mt-2" id="limSpendToday">$0</p><p class="text-[10px] text-overlay0 mt-1" id="limPctDaily">—</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Week</p><p class="text-3xl font-bold mono mt-2" id="limSpendWeek">$0</p></div>
+      <div class="card"><p class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest">Month</p><p class="text-3xl font-bold mono mt-2" id="limSpendMonth">$0</p></div>
+    </div>
+    <div class="card mb-4">
+      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-3">Global Caps (USD)</h2>
+      <div class="grid grid-cols-3 gap-3 mb-3">
+        <div><label class="text-[10px] text-overlay0">Daily</label><input id="capDaily" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
+        <div><label class="text-[10px] text-overlay0">Weekly</label><input id="capWeekly" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
+        <div><label class="text-[10px] text-overlay0">Monthly</label><input id="capMonthly" class="inp w-full" type="number" step="0.01" placeholder="$"/></div>
+      </div>
+      <div class="flex items-center gap-3 mb-3">
+        <label class="flex items-center gap-2 text-xs"><input type="checkbox" id="capPaused"/> Pause all (kill-switch)</label>
+      </div>
+      <h2 class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2">Loop Detector</h2>
+      <div class="grid grid-cols-3 gap-3 mb-3">
+        <div><label class="text-[10px] text-overlay0">Window (sec)</label><input id="loopWin" class="inp w-full" type="number" placeholder="60"/></div>
+        <div><label class="text-[10px] text-overlay0">Max calls</label><input id="loopMax" class="inp w-full" type="number" placeholder="30"/></div>
+        <div class="flex items-end"><label class="text-xs"><input type="checkbox" id="loopEn"/> Enabled</label></div>
+      </div>
+      <button class="fb on" onclick="saveLimits()">Save Limits</button>
+      <span id="limSaveStatus" class="text-[10px] text-overlay0 ml-2"></span>
+    </div>
+  </div>
 </div>
 </div><!-- /mainContent -->
 
@@ -251,12 +304,15 @@ function fmtT(iso){if(!iso)return'';return new Date(iso).toLocaleString('en-US',
 // Tabs
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));
-  ['spend','settings','security'].forEach(id=>{
+  ['spend','calls','limits','settings','security'].forEach(id=>{
     const el=$('tab-'+id);
+    if(!el) return;
     if(id===t){el.style.display='';el.style.animation='su .3s ease-out';}
     else{el.style.display='none';}
   });
   if(t==='security')loadSec();
+  if(t==='calls')loadCalls();
+  if(t==='limits')loadLimits();
   if(t==='settings')loadSettings();
 }
 
@@ -586,6 +642,67 @@ async function tick(){
   }
 }
 tick();setInterval(tick,15000);
+
+// ========== CALLS tab ==========
+async function loadCalls(){
+  const prov=$('callProv').value, mdl=$('callModel').value;
+  const q=new URLSearchParams({limit:200});
+  if(prov)q.set('provider',prov); if(mdl)q.set('model',mdl);
+  const r=await fetch('/api/calls?'+q).then(r=>r.json());
+  $('callsTotal').textContent=r.total||0;
+  let totalCost=0,latSum=0,latN=0;
+  const rows=r.items.map(c=>{
+    totalCost+=c.cost_usd||0;
+    if(c.latency_ms){latSum+=c.latency_ms;latN++;}
+    const t=new Date(c.ts).toLocaleString('en-US',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+    const cache=(c.cache_read||0)+(c.cache_write||0);
+    const stColor=c.status==='200'?'text-green':(c.status==='blocked'?'text-red':'text-yellow');
+    return `<tr class="tr"><td class="td">${esc(t)}</td><td class="td">${esc(c.provider||'')}</td><td class="td">${esc(c.model||'')}</td><td class="td">${esc(c.agent_id||'-')}</td><td class="td text-right">${F(c.input_tokens||0)}</td><td class="td text-right">${F(c.output_tokens||0)}</td><td class="td text-right">${F(cache)}</td><td class="td text-right text-peach">${money(c.cost_usd||0)}</td><td class="td text-right">${c.latency_ms||0}ms</td><td class="td ${stColor}">${esc(c.status||'')}</td></tr>`;
+  }).join('');
+  $('callsBody').innerHTML=rows||'<tr><td colspan="10" class="td text-center text-overlay0 py-6">No calls yet</td></tr>';
+  $('callsCost').textContent=money(totalCost);
+  $('callsLat').textContent=latN?Math.round(latSum/latN)+'ms':'—';
+  // blocked count from billing-proxy health
+  const hp=await fetch('/api/billing-proxy').then(r=>r.json()).catch(()=>({}));
+  $('callsBlocked').textContent=hp.blockedCount||0;
+}
+
+// ========== LIMITS tab ==========
+async function loadLimits(){
+  const l=await fetch('/api/limits').then(r=>r.json());
+  $('limSpendToday').textContent=money(l.spend?.today||0);
+  $('limSpendWeek').textContent=money(l.spend?.week||0);
+  $('limSpendMonth').textContent=money(l.spend?.month||0);
+  if(l.pctDaily!=null)$('limPctDaily').textContent=(l.pctDaily*100).toFixed(0)+'% of daily cap';
+  const g=l.limits?.global||{};
+  $('capDaily').value=g.dailyUsd??g.dailyLimit??'';
+  $('capWeekly').value=g.weeklyUsd??g.weeklyLimit??'';
+  $('capMonthly').value=g.monthlyUsd??g.monthlyLimit??'';
+  $('capPaused').checked=!!l.limits?.paused;
+  $('loopWin').value=l.limits?.loopDetector?.windowSec??60;
+  $('loopMax').value=l.limits?.loopDetector?.maxCalls??30;
+  $('loopEn').checked=l.limits?.loopDetector?.enabled!==false;
+}
+async function saveLimits(){
+  const payload={
+    enabled:true,
+    paused:$('capPaused').checked,
+    global:{
+      dailyUsd:parseFloat($('capDaily').value)||null,
+      weeklyUsd:parseFloat($('capWeekly').value)||null,
+      monthlyUsd:parseFloat($('capMonthly').value)||null
+    },
+    loopDetector:{
+      enabled:$('loopEn').checked,
+      windowSec:parseInt($('loopWin').value)||60,
+      maxCalls:parseInt($('loopMax').value)||30
+    }
+  };
+  $('limSaveStatus').textContent='saving...';
+  const r=await fetch('/api/limits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+  $('limSaveStatus').textContent=r.ok?'✓ saved':'✗ '+(r.error||'err');
+  setTimeout(()=>{$('limSaveStatus').textContent='';loadLimits();},2000);
+}
 </script>
 </body>
 </html>

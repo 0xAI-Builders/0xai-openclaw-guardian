@@ -1,6 +1,6 @@
 {
   "name": "openclaw-observability",
-  "version": "1.0.0",
+  "version": "2.0.0-alpha.0",
   "description": "Real-time cost tracking, security monitoring, and settings dashboard for OpenClaw AI agent deployments",
   "type": "module",
   "main": "src/server.mjs",
@@ -25,6 +25,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "noosphere": "*"
   },
   "files": [

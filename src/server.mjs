@@ -604,6 +604,48 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
     res.end(JSON.stringify(billingProxy.getStatus()));
 
+  } else if (url.pathname === '/api/calls' && req.method === 'GET') {
+    const params = Object.fromEntries(url.searchParams);
+    const toNum = (v) => (v !== undefined ? Number(v) : undefined);
+    const opts = {
+      from: toNum(params.from), to: toNum(params.to),
+      provider: params.provider, agent_id: params.agent_id, model: params.model,
+      limit: toNum(params.limit) ?? 100, offset: toNum(params.offset) ?? 0,
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+    res.end(JSON.stringify(billingProxy.callLogger.query(opts)));
+
+  } else if (url.pathname === '/api/calls/aggregate' && req.method === 'GET') {
+    const params = Object.fromEntries(url.searchParams);
+    const toNum = (v) => (v !== undefined ? Number(v) : undefined);
+    const data = billingProxy.callLogger.aggregate({
+      from: toNum(params.from), to: toNum(params.to),
+      by: params.by || 'provider',
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+    res.end(JSON.stringify({ by: params.by || 'provider', data }));
+
+  } else if (url.pathname === '/api/limits' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+    res.end(JSON.stringify(billingProxy.guards?.snapshot() || {}));
+
+  } else if (url.pathname === '/api/limits' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { writeFileSync } = await import('node:fs');
+        const data = JSON.parse(body);
+        writeFileSync(billingProxy.guards.limitsPath, JSON.stringify(data, null, 2));
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+        res.end(JSON.stringify({ ok: true, limits: billingProxy.guards.getLimits() }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+
   } else if (url.pathname === '/api/config' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
     res.end(JSON.stringify(getConfig()));

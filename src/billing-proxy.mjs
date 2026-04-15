@@ -12,6 +12,16 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { CallLogger, defaultLoggerPath } from './logger.mjs';
+import { Guards, defaultLimitsPath } from './guards.mjs';
+import {
+  peekRequest,
+  parseAnthropicNonStream,
+  parseAnthropicSseChunk,
+  sseData,
+  computeCost,
+  ANTHROPIC_PRICING,
+} from './usage-parser.mjs';
 
 const DEFAULT_PORT = 18801;
 const DEFAULT_HOST = '127.0.0.1';
@@ -736,6 +746,8 @@ function buildHealthPayload(manager) {
     proxy: 'openclaw-billing-proxy',
     version: VERSION,
     requestsServed: manager.requestCount,
+    blockedCount: manager.blockedCount || 0,
+    guards: manager.guards?.snapshot?.() || null,
     uptime: Math.floor((Date.now() - manager.startedAt) / 1000) + 's',
     tokenExpiresInHours: Number.isFinite(expiresInHours) ? expiresInHours.toFixed(1) : 'n/a',
     subscriptionType: oauth.subscriptionType,
@@ -763,6 +775,9 @@ export class BillingProxyManager {
     this.lastError = '';
     this.startPromise = null;
     this.config = null;
+    this.callLogger = new CallLogger({ dbPath: defaultLoggerPath(openclawDir), logger });
+    this.guards = new Guards({ limitsPath: defaultLimitsPath(openclawDir), logger_: logger, callLogger: this.callLogger });
+    this.blockedCount = 0;
   }
 
   loadConfig() {
@@ -826,6 +841,7 @@ export class BillingProxyManager {
       version: VERSION,
       emulating: CC_VERSION,
       requestCount: this.requestCount,
+      blockedCount: this.blockedCount || 0,
       uptimeSeconds: this.startedAt ? Math.floor((Date.now() - this.startedAt) / 1000) : 0,
       config: this.config ? {
         port: this.config.port,
@@ -888,6 +904,50 @@ export class BillingProxyManager {
 
             let bodyStr = body.toString('utf8');
             const originalSize = bodyStr.length;
+
+            // --- GUARD: pre-request kill-switch ---
+            const peek = peekRequest(bodyStr);
+            const agentIdHeader = req.headers['x-openclaw-agent-id'] || req.headers['x-agent-id'] || null;
+            const sessionIdHeader = req.headers['x-openclaw-session-id'] || req.headers['x-session-id'] || null;
+            const ctx = {
+              provider: 'anthropic',
+              model: peek.model,
+              agent_id: peek.agent_id || agentIdHeader,
+              session_id: peek.session_id || sessionIdHeader,
+            };
+            const verdict = this.guards.check(ctx);
+            if (!verdict.allowed) {
+              this.blockedCount++;
+              log(this.logger, 'warn', `[billing-proxy] #${reqNum} BLOCKED [${verdict.code}] ${verdict.reason}`);
+              this.callLogger.record({
+                ts: Date.now(),
+                provider: 'anthropic',
+                model: peek.model,
+                agent_id: ctx.agent_id,
+                session_id: ctx.session_id,
+                status: 'blocked',
+                error: verdict.reason,
+                endpoint: req.url,
+                method: req.method,
+                request_bytes: originalSize,
+              });
+              res.writeHead(429, { 'Content-Type': 'application/json', 'x-openclaw-obs-blocked': verdict.code });
+              res.end(JSON.stringify({
+                type: 'error',
+                error: {
+                  type: 'rate_limit_error',
+                  message: `[openclaw-observability] ${verdict.reason}`,
+                  code: verdict.code,
+                  spend: verdict.spend,
+                  limit: verdict.limit,
+                },
+              }));
+              return;
+            }
+
+            const startedAtMs = Date.now();
+            const reqCtx = ctx;
+
             bodyStr = processBody(bodyStr, this.config, this.logger);
             body = Buffer.from(bodyStr, 'utf8');
 
@@ -944,6 +1004,16 @@ export class BillingProxyManager {
                   nextHeaders['content-length'] = Buffer.byteLength(errBody);
                   res.writeHead(upRes.statusCode || 500, nextHeaders);
                   res.end(errBody);
+                  // log failure
+                  this.callLogger.record({
+                    ts: startedAtMs, provider: 'anthropic',
+                    model: reqCtx.model, agent_id: reqCtx.agent_id, session_id: reqCtx.session_id,
+                    request_id: upRes.headers['request-id'] || upRes.headers['x-request-id'] || null,
+                    latency_ms: Date.now() - startedAtMs,
+                    status: String(upRes.statusCode), error: errBody.slice(0, 500),
+                    endpoint: req.url, method: req.method,
+                    request_bytes: originalSize, response_bytes: Buffer.byteLength(errBody),
+                  });
                 });
                 return;
               }
@@ -957,6 +1027,8 @@ export class BillingProxyManager {
                 const decoder = new StringDecoder('utf8');
                 let pending = '';
                 let currentBlockIsThinking = false;
+                const usageAcc = {};
+                let respBytes = 0;
 
                 const transformEvent = (event) => {
                   let dataIdx = event.startsWith('data: ') ? 0 : event.indexOf('\ndata: ');
@@ -989,19 +1061,42 @@ export class BillingProxyManager {
                 };
 
                 upRes.on('data', (chunk) => {
+                  respBytes += chunk.length;
                   pending += decoder.write(chunk);
                   let sepIdx;
                   while ((sepIdx = pending.indexOf('\n\n')) !== -1) {
                     const event = pending.slice(0, sepIdx + 2);
                     pending = pending.slice(sepIdx + 2);
+                    for (const payload of sseData(event)) {
+                      parseAnthropicSseChunk(payload, usageAcc);
+                    }
                     res.write(transformEvent(event));
                   }
                 });
 
                 upRes.on('end', () => {
                   pending += decoder.end();
-                  if (pending.length > 0) res.write(transformEvent(pending));
+                  if (pending.length > 0) {
+                    for (const payload of sseData(pending)) parseAnthropicSseChunk(payload, usageAcc);
+                    res.write(transformEvent(pending));
+                  }
                   res.end();
+                  const cost = computeCost(usageAcc.model || reqCtx.model, usageAcc, ANTHROPIC_PRICING);
+                  this.callLogger.record({
+                    ts: startedAtMs, provider: 'anthropic',
+                    model: usageAcc.model || reqCtx.model,
+                    agent_id: reqCtx.agent_id, session_id: reqCtx.session_id,
+                    request_id: upRes.headers['request-id'] || upRes.headers['x-request-id'] || null,
+                    input_tokens: usageAcc.input_tokens || 0,
+                    output_tokens: usageAcc.output_tokens || 0,
+                    cache_read: usageAcc.cache_read || 0,
+                    cache_write: usageAcc.cache_write || 0,
+                    cost_usd: cost,
+                    latency_ms: Date.now() - startedAtMs,
+                    status: String(upRes.statusCode || 200),
+                    endpoint: req.url, method: req.method, stream: 1,
+                    request_bytes: originalSize, response_bytes: respBytes,
+                  });
                 });
                 return;
               }
@@ -1010,6 +1105,8 @@ export class BillingProxyManager {
               upRes.on('data', (chunk) => respChunks.push(chunk));
               upRes.on('end', () => {
                 let respBody = Buffer.concat(respChunks).toString();
+                const originalRespBytes = Buffer.byteLength(respBody);
+                const usage = parseAnthropicNonStream(respBody) || {};
                 const { masked, masks } = maskThinkingBlocks(respBody);
                 respBody = unmaskThinkingBlocks(reverseMap(masked, this.config), masks);
                 const nextHeaders = { ...upRes.headers };
@@ -1017,6 +1114,22 @@ export class BillingProxyManager {
                 nextHeaders['content-length'] = Buffer.byteLength(respBody);
                 res.writeHead(upRes.statusCode || 200, nextHeaders);
                 res.end(respBody);
+                const cost = computeCost(usage.model || reqCtx.model, usage, ANTHROPIC_PRICING);
+                this.callLogger.record({
+                  ts: startedAtMs, provider: 'anthropic',
+                  model: usage.model || reqCtx.model,
+                  agent_id: reqCtx.agent_id, session_id: reqCtx.session_id,
+                  request_id: upRes.headers['request-id'] || upRes.headers['x-request-id'] || null,
+                  input_tokens: usage.input_tokens || 0,
+                  output_tokens: usage.output_tokens || 0,
+                  cache_read: usage.cache_read || 0,
+                  cache_write: usage.cache_write || 0,
+                  cost_usd: cost,
+                  latency_ms: Date.now() - startedAtMs,
+                  status: String(upRes.statusCode || 200),
+                  endpoint: req.url, method: req.method, stream: 0,
+                  request_bytes: originalSize, response_bytes: originalRespBytes,
+                });
               });
             });
 
