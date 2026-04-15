@@ -31,6 +31,16 @@ const DEFAULTS = Object.freeze({
   perProvider: {},
   loopDetector: { enabled: true, windowSec: 60, maxCalls: 30 },
   warningThreshold: 0.8,
+  // Zero-cost providers need *rate* or *token* caps since $ caps never trigger.
+  // Defaults protect ollama at a reasonable-ish baseline.
+  localProviders: ['ollama'],
+  rateLimits: {
+    perProvider: {
+      ollama: { callsPerMinute: 120, callsPerHour: 2000, tokensPerDay: 50_000_000 },
+    },
+    perAgent: {},
+    perModel: {},
+  },
 });
 
 export class Guards {
@@ -129,6 +139,40 @@ export class Guards {
       const count = this.callLogger.recentSessionCalls(ctx.session_id, windowSec * 1000);
       if (count >= maxCalls) {
         return { allowed: false, code: 'loop_detected', reason: `Session '${ctx.session_id}' exceeded ${maxCalls} calls/${windowSec}s (got ${count})`, spend: count, limit: maxCalls };
+      }
+    }
+
+    // 6. Rate & token limits — critical for zero-cost providers (ollama, local)
+    const rateChecks = [
+      { col: 'provider', val: ctx.provider, cfg: L.rateLimits?.perProvider?.[ctx.provider] },
+      { col: 'agent_id', val: ctx.agent_id, cfg: L.rateLimits?.perAgent?.[ctx.agent_id] },
+      { col: 'model',    val: ctx.model,    cfg: L.rateLimits?.perModel?.[ctx.model] },
+    ];
+    for (const { col, val, cfg } of rateChecks) {
+      if (!cfg || !val) continue;
+      if (cfg.callsPerMinute != null) {
+        const n = this.callLogger.callsInWindow(col, val, 60_000);
+        if (n >= cfg.callsPerMinute) {
+          return { allowed: false, code: `${col}_rpm_cap`, reason: `${col}='${val}' exceeded ${cfg.callsPerMinute} calls/min (got ${n})`, spend: n, limit: cfg.callsPerMinute };
+        }
+      }
+      if (cfg.callsPerHour != null) {
+        const n = this.callLogger.callsInWindow(col, val, 3600_000);
+        if (n >= cfg.callsPerHour) {
+          return { allowed: false, code: `${col}_rph_cap`, reason: `${col}='${val}' exceeded ${cfg.callsPerHour} calls/hour (got ${n})`, spend: n, limit: cfg.callsPerHour };
+        }
+      }
+      if (cfg.callsPerDay != null) {
+        const n = this.callLogger.callsInWindow(col, val, 86400_000);
+        if (n >= cfg.callsPerDay) {
+          return { allowed: false, code: `${col}_rpd_cap`, reason: `${col}='${val}' exceeded ${cfg.callsPerDay} calls/day (got ${n})`, spend: n, limit: cfg.callsPerDay };
+        }
+      }
+      if (cfg.tokensPerDay != null && col !== 'session_id') {
+        const n = this.callLogger.tokensInWindow(col, val, 86400_000);
+        if (n >= cfg.tokensPerDay) {
+          return { allowed: false, code: `${col}_tpd_cap`, reason: `${col}='${val}' exceeded ${cfg.tokensPerDay.toLocaleString()} tokens/day (got ${n.toLocaleString()})`, spend: n, limit: cfg.tokensPerDay };
+        }
       }
     }
 

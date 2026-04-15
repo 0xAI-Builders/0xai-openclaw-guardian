@@ -333,7 +333,14 @@ td.td:last-child{padding-right:4px !important}
         <div><label class="text-[10px] text-overlay0" title="Maximum calls allowed per session within the window">Max calls</label><input id="loopMax" class="inp w-full" type="number" placeholder="30" title="Block further calls from a session once this many have been made within the window"/></div>
         <div class="flex items-end"><label class="text-xs" title="Enable or disable the loop detector globally"><input type="checkbox" id="loopEn"/> Enabled</label></div>
       </div>
-      <button class="fb on" onclick="saveLimits()" title="Write changes to ~/.openclaw/observability/limits.json. The proxy hot-reloads on file mtime change.">Save Limits</button>
+      <h2 id="limits-rates" data-slug="rates" class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2 mt-4" title="Rate + token caps for zero-cost providers (like Ollama). USD caps never trigger for them because cost=$0, so these limits are the only safeguard against runaway local inference.">Local / Zero-Cost Provider Limits</h2>
+      <p class="text-[10px] text-overlay0 mb-2">Applied when a provider runs at $0 (ollama, local). USD caps above won't catch a loop here.</p>
+      <div id="rateRows"></div>
+      <div class="flex gap-2 mt-2">
+        <input id="rateNewProv" class="inp" style="width:120px" placeholder="provider" title="Provider key (e.g. ollama)"/>
+        <button class="fb" onclick="addRateRow()" title="Add a new rate-limit row for another provider">+ Add provider</button>
+      </div>
+      <button class="fb on" onclick="saveLimits()" title="Write changes to ~/.openclaw/observability/limits.json. The proxy hot-reloads on file mtime change." style="margin-top:16px">Save Limits</button>
       <span id="limSaveStatus" class="text-[10px] text-overlay0 ml-2"></span>
     </div>
   </div>
@@ -863,8 +870,10 @@ async function loadCalls(){
 }
 
 // ========== LIMITS tab ==========
+let _currentLimits={};
 async function loadLimits(){
   const l=await fetch('/api/limits').then(r=>r.json());
+  _currentLimits=l.limits||{};
   $('limSpendToday').textContent=money(l.spend?.today||0);
   $('limSpendWeek').textContent=money(l.spend?.week||0);
   $('limSpendMonth').textContent=money(l.spend?.month||0);
@@ -877,6 +886,50 @@ async function loadLimits(){
   $('loopWin').value=l.limits?.loopDetector?.windowSec??60;
   $('loopMax').value=l.limits?.loopDetector?.maxCalls??30;
   $('loopEn').checked=l.limits?.loopDetector?.enabled!==false;
+  renderRateRows(l.limits?.rateLimits?.perProvider||{});
+}
+function renderRateRows(perProv){
+  const keys=Object.keys(perProv).length?Object.keys(perProv):['ollama'];
+  const html=keys.map(p=>{
+    const v=perProv[p]||{};
+    return `<div class="flex flex-wrap gap-2 items-center mb-2" data-prov="${esc(p)}">
+      <span class="inp" style="min-width:100px;background:#11111b;color:#fab387" title="Provider key">${esc(p)}</span>
+      <input class="inp w-24 rl-rpm" type="number" placeholder="calls/min" value="${v.callsPerMinute??''}" title="Max calls per minute for this provider. Blocks with 429 when reached."/>
+      <input class="inp w-24 rl-rph" type="number" placeholder="calls/hr" value="${v.callsPerHour??''}" title="Max calls per hour."/>
+      <input class="inp w-24 rl-rpd" type="number" placeholder="calls/day" value="${v.callsPerDay??''}" title="Max calls per 24h."/>
+      <input class="inp w-32 rl-tpd" type="number" placeholder="tokens/day" value="${v.tokensPerDay??''}" title="Max total tokens (input+output+cache) per 24h."/>
+      <button class="ib danger" onclick="removeRateRow('${esc(p)}')" title="Remove this provider">🗑</button>
+    </div>`;
+  }).join('');
+  $('rateRows').innerHTML=html||'<p class="text-[10px] text-overlay0 italic">No local providers configured</p>';
+}
+function addRateRow(){
+  const name=$('rateNewProv').value.trim().toLowerCase();
+  if(!name)return alert('Provider name required');
+  const cur=_currentLimits.rateLimits?.perProvider||{};
+  if(cur[name])return alert('Already exists');
+  cur[name]={callsPerMinute:60};
+  _currentLimits.rateLimits=_currentLimits.rateLimits||{perProvider:{}};
+  _currentLimits.rateLimits.perProvider=cur;
+  $('rateNewProv').value='';
+  renderRateRows(cur);
+}
+function removeRateRow(provider){
+  const cur=_currentLimits.rateLimits?.perProvider||{};
+  delete cur[provider];
+  renderRateRows(cur);
+}
+function collectRateRows(){
+  const out={};
+  document.querySelectorAll('#rateRows [data-prov]').forEach(row=>{
+    const p=row.dataset.prov;
+    const rpm=parseInt(row.querySelector('.rl-rpm').value)||null;
+    const rph=parseInt(row.querySelector('.rl-rph').value)||null;
+    const rpd=parseInt(row.querySelector('.rl-rpd').value)||null;
+    const tpd=parseInt(row.querySelector('.rl-tpd').value)||null;
+    if(rpm||rph||rpd||tpd) out[p]={callsPerMinute:rpm,callsPerHour:rph,callsPerDay:rpd,tokensPerDay:tpd};
+  });
+  return out;
 }
 async function saveLimits(){
   const payload={
@@ -891,7 +944,8 @@ async function saveLimits(){
       enabled:$('loopEn').checked,
       windowSec:parseInt($('loopWin').value)||60,
       maxCalls:parseInt($('loopMax').value)||30
-    }
+    },
+    rateLimits:{perProvider:collectRateRows(),perAgent:{},perModel:{}}
   };
   $('limSaveStatus').textContent='saving...';
   const r=await fetch('/api/limits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());

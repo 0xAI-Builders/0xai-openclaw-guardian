@@ -219,6 +219,31 @@ export class CallLogger {
     return row?.n || 0;
   }
 
+  /** Count recent calls for an arbitrary dimension within a rolling window. */
+  callsInWindow(col, value, withinMs) {
+    if (!this.db || !value) return 0;
+    const allowed = new Set(['provider', 'model', 'agent_id', 'session_id']);
+    if (!allowed.has(col)) return 0;
+    const since = Date.now() - withinMs;
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS n FROM calls WHERE ${col} = ? AND ts >= ?`
+    ).get(value, since);
+    return row?.n || 0;
+  }
+
+  /** Sum tokens (input + output + cache) for a dimension in a rolling window. */
+  tokensInWindow(col, value, withinMs) {
+    if (!this.db || !value) return 0;
+    const allowed = new Set(['provider', 'model', 'agent_id']);
+    if (!allowed.has(col)) return 0;
+    const since = Date.now() - withinMs;
+    const row = this.db.prepare(
+      `SELECT COALESCE(SUM(input_tokens + output_tokens + cache_read + cache_write), 0) AS n
+       FROM calls WHERE ${col} = ? AND ts >= ?`
+    ).get(value, since);
+    return row?.n || 0;
+  }
+
   close() {
     if (this.db) try { this.db.close(); } catch {}
     this.db = null;
