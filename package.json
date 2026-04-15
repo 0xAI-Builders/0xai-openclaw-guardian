@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-observability",
+  "name": "0xai-openclaw-guardian",
   "version": "2.0.0-alpha.0",
   "description": "Real-time cost tracking, security monitoring, and settings dashboard for OpenClaw AI agent deployments",
   "type": "module",
@@ -35,5 +35,14 @@
     "hooks/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xAI-Builders/0xai-openclaw-guardian"
+  },
+  "homepage": "https://github.com/0xAI-Builders/0xai-openclaw-guardian#readme",
+  "bugs": {
+    "url": "https://github.com/0xAI-Builders/0xai-openclaw-guardian/issues"
+  },
+  "author": "0xAI-Builders"
 }
