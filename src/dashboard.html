@@ -336,9 +336,12 @@ td.td:last-child{padding-right:4px !important}
       <h2 id="limits-rates" data-slug="rates" class="text-[10px] font-semibold text-overlay0 uppercase tracking-widest mb-2 mt-4" title="Rate + token caps for zero-cost providers (like Ollama). USD caps never trigger for them because cost=$0, so these limits are the only safeguard against runaway local inference.">Local / Zero-Cost Provider Limits</h2>
       <p class="text-[10px] text-overlay0 mb-2">Applied when a provider runs at $0 (ollama, local). USD caps above won't catch a loop here.</p>
       <div id="rateRows"></div>
-      <div class="flex gap-2 mt-2">
-        <input id="rateNewProv" class="inp" style="width:120px" placeholder="provider" title="Provider key (e.g. ollama)"/>
-        <button class="fb" onclick="addRateRow()" title="Add a new rate-limit row for another provider">+ Add provider</button>
+      <div class="flex gap-2 mt-2 items-center">
+        <select id="rateNewProv" class="inp" style="width:180px" title="Pick a provider to add a rate-limit row">
+          <option value="">Pick provider…</option>
+        </select>
+        <button class="fb" onclick="addRateRow()" title="Add a rate-limit row for the selected provider">+ Add</button>
+        <span class="text-[10px] text-overlay0">(zero-cost = marked 🪙)</span>
       </div>
       <button class="fb on" onclick="saveLimits()" title="Write changes to ~/.openclaw/observability/limits.json. The proxy hot-reloads on file mtime change." style="margin-top:16px">Save Limits</button>
       <span id="limSaveStatus" class="text-[10px] text-overlay0 ml-2"></span>
@@ -888,30 +891,52 @@ async function loadLimits(){
   $('loopEn').checked=l.limits?.loopDetector?.enabled!==false;
   renderRateRows(l.limits?.rateLimits?.perProvider||{});
 }
+// Known providers served by the proxy. 🪙 marks zero-cost / local.
+const KNOWN_PROVIDERS = [
+  { id: 'ollama',      label: '🪙 ollama (local)' },
+  { id: 'anthropic',   label: 'anthropic' },
+  { id: 'openai',      label: 'openai' },
+  { id: 'google',      label: 'google' },
+  { id: 'openrouter',  label: 'openrouter' },
+  { id: 'groq',        label: 'groq' },
+  { id: 'cerebras',    label: 'cerebras' },
+  { id: 'xai',         label: 'xai' },
+  { id: 'huggingface', label: 'huggingface' },
+];
 function renderRateRows(perProv){
   const keys=Object.keys(perProv).length?Object.keys(perProv):['ollama'];
   const html=keys.map(p=>{
     const v=perProv[p]||{};
+    const isZeroCost = p === 'ollama';
+    const label = isZeroCost ? `🪙 ${p}` : p;
     return `<div class="flex flex-wrap gap-2 items-center mb-2" data-prov="${esc(p)}">
-      <span class="inp" style="min-width:100px;background:#11111b;color:#fab387" title="Provider key">${esc(p)}</span>
-      <input class="inp w-24 rl-rpm" type="number" placeholder="calls/min" value="${v.callsPerMinute??''}" title="Max calls per minute for this provider. Blocks with 429 when reached."/>
+      <span class="inp" style="min-width:110px;background:#11111b;color:${isZeroCost?'#a6e3a1':'#fab387'}" title="Provider ${esc(p)}${isZeroCost?' — zero-cost local provider':''}">${esc(label)}</span>
+      <input class="inp w-24 rl-rpm" type="number" placeholder="calls/min" value="${v.callsPerMinute??''}" title="Max calls per minute. Returns HTTP 429 when reached."/>
       <input class="inp w-24 rl-rph" type="number" placeholder="calls/hr" value="${v.callsPerHour??''}" title="Max calls per hour."/>
-      <input class="inp w-24 rl-rpd" type="number" placeholder="calls/day" value="${v.callsPerDay??''}" title="Max calls per 24h."/>
-      <input class="inp w-32 rl-tpd" type="number" placeholder="tokens/day" value="${v.tokensPerDay??''}" title="Max total tokens (input+output+cache) per 24h."/>
-      <button class="ib danger" onclick="removeRateRow('${esc(p)}')" title="Remove this provider">🗑</button>
+      <input class="inp w-24 rl-rpd" type="number" placeholder="calls/day" value="${v.callsPerDay??''}" title="Max calls per 24 hours."/>
+      <input class="inp w-32 rl-tpd" type="number" placeholder="tokens/day" value="${v.tokensPerDay??''}" title="Max total tokens (input + output + cache) per 24h."/>
+      <button class="ib danger" onclick="removeRateRow('${esc(p)}')" title="Remove this provider row">🗑</button>
     </div>`;
   }).join('');
-  $('rateRows').innerHTML=html||'<p class="text-[10px] text-overlay0 italic">No local providers configured</p>';
+  $('rateRows').innerHTML=html||'<p class="text-[10px] text-overlay0 italic">No providers configured</p>';
+  // Rebuild dropdown: skip providers that already have a row.
+  const used=new Set(keys);
+  const sel=$('rateNewProv');
+  sel.innerHTML = '<option value="">Pick provider…</option>' +
+    KNOWN_PROVIDERS.filter(p=>!used.has(p.id)).map(p=>`<option value="${p.id}">${p.label}</option>`).join('');
 }
 function addRateRow(){
   const name=$('rateNewProv').value.trim().toLowerCase();
-  if(!name)return alert('Provider name required');
+  if(!name)return; // just silently ignore empty — placeholder is self-explanatory
   const cur=_currentLimits.rateLimits?.perProvider||{};
-  if(cur[name])return alert('Already exists');
-  cur[name]={callsPerMinute:60};
+  if(cur[name])return;
+  // Sensible defaults: zero-cost locals get aggressive caps (loops on GPU),
+  // paid providers get nothing (no surprise — user sets explicitly).
+  cur[name] = name === 'ollama'
+    ? { callsPerMinute: 120, callsPerHour: 2000, tokensPerDay: 50_000_000 }
+    : { callsPerMinute: 60 };
   _currentLimits.rateLimits=_currentLimits.rateLimits||{perProvider:{}};
   _currentLimits.rateLimits.perProvider=cur;
-  $('rateNewProv').value='';
   renderRateRows(cur);
 }
 function removeRateRow(provider){
