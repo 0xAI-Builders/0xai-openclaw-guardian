@@ -22,6 +22,14 @@ import {
   computeCost,
   ANTHROPIC_PRICING,
 } from './usage-parser.mjs';
+import {
+  PROVIDERS as MP_PROVIDERS,
+  priceFor as mpPriceFor,
+  peekProviderRequest,
+  forwardToProvider,
+} from './multi-provider.mjs';
+
+const MULTI_PREFIXES = ['/openai', '/google', '/openrouter', '/ollama', '/groq', '/cerebras', '/xai', '/huggingface'];
 
 const DEFAULT_PORT = 18801;
 const DEFAULT_HOST = '127.0.0.1';
@@ -893,6 +901,59 @@ export class BillingProxyManager {
           req.on('data', (chunk) => chunks.push(chunk));
           req.on('end', () => {
             let body = Buffer.concat(chunks);
+
+            // --- Multi-provider routing (ahead of Anthropic flow) ---
+            const prefix = MULTI_PREFIXES.find(p => req.url === p || req.url.startsWith(p + '/'));
+            if (prefix) {
+              const providerKey = prefix.slice(1);
+              const subPath = req.url.slice(prefix.length) || '/';
+              const bodyStr = body.toString('utf8');
+              const peekMP = peekProviderRequest(providerKey, bodyStr);
+              const verdict = this.guards.check({
+                provider: providerKey, model: peekMP.model,
+                agent_id: null, session_id: null,
+              });
+              if (!verdict.allowed) {
+                this.blockedCount++;
+                log(this.logger, 'warn', `[${providerKey}] #${reqNum} BLOCKED [${verdict.code}]`);
+                this.callLogger.record({
+                  ts: Date.now(), provider: providerKey, model: peekMP.model,
+                  status: 'blocked', error: verdict.reason,
+                  endpoint: subPath, method: req.method, request_bytes: body.length,
+                  user_query: peekMP.user_query, system_snippet: peekMP.system_snippet,
+                });
+                res.writeHead(429, { 'Content-Type': 'application/json', 'x-openclaw-obs-blocked': verdict.code });
+                res.end(JSON.stringify({ error: { type: 'rate_limit_error', message: verdict.reason, code: verdict.code } }));
+                return;
+              }
+              log(this.logger, 'log', `[${providerKey}] #${reqNum} ${req.method} ${subPath} (${body.length}b)`);
+              forwardToProvider({
+                providerKey, subPath, req, res, body, logger: this.logger,
+                onDone: (result) => {
+                  const p = mpPriceFor(providerKey, result.model) || {};
+                  const cost = computeCost(result.model, result.usage, { [result.model]: p });
+                  this.callLogger.record({
+                    ts: Date.now() - result.latencyMs, provider: providerKey,
+                    model: result.model,
+                    agent_id: null, session_id: null,
+                    request_id: result.requestId,
+                    input_tokens: result.usage.input_tokens || 0,
+                    output_tokens: result.usage.output_tokens || 0,
+                    cache_read: result.usage.cache_read || 0,
+                    cache_write: result.usage.cache_write || 0,
+                    cost_usd: cost,
+                    latency_ms: result.latencyMs,
+                    status: String(result.status),
+                    endpoint: subPath, method: req.method, stream: result.isStream ? 1 : 0,
+                    request_bytes: result.requestBytes, response_bytes: result.responseBytes,
+                    is_subscription: false,
+                    user_query: peekMP.user_query, system_snippet: peekMP.system_snippet,
+                  });
+                },
+              });
+              return;
+            }
+
             let oauth;
             try {
               oauth = getToken(this.config.credsPath);
