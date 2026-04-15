@@ -1,189 +1,240 @@
 # OpenClaw Observability
 
-Real-time cost tracking, security monitoring, and configuration dashboard for [OpenClaw](https://openclaw.ai) AI agent deployments. Reads session JSONL files directly from your `.openclaw` directory, calculates accurate API costs (with correct Google cache handling and Anthropic subscription detection), and serves a Catppuccin-themed Tailwind CSS dashboard with Spend, Settings, and Security tabs.
+Real-time observability, **cost tracking**, **kill-switches** and configuration dashboard for [OpenClaw](https://openclaw.ai) AI agent deployments.
 
-![Screenshot placeholder](https://via.placeholder.com/1200x600/1e1e2e/fab387?text=OpenClaw+Observability+Dashboard)
+- 🔍 Intercepts **every AI call** from OpenClaw to any provider (Anthropic, OpenAI, Google, OpenRouter, Groq, Cerebras, xAI, Ollama, HuggingFace)
+- 💰 Real per-call cost calculation via **noosphere** pricing catalog (45+ models, auto-synced)
+- 🛡 **Kill-switches**: USD caps (daily/weekly/monthly), per-agent/per-model caps, rate limits for zero-cost providers (ollama), loop detector, emergency pause
+- 📊 Dashboard at `http://localhost:3847` with tabs: **Spend · Calls · Crons · Limits · Settings · Security**
+- 🔗 Stateful: SQLite-backed `calls.db` for live queries and aggregations
+- 🪙 Subscription-aware: shows **SUB vs API** per call, always prints the API-equivalent cost (even for Claude Max)
 
-## Quick Start
+---
 
-Run directly with npx (no install required):
+## Install
+
+Zero setup if you just want to run it:
 
 ```bash
+# Global CLI
+npm install -g openclaw-observability
+openclaw-obs
+
+# Or without install
 npx openclaw-observability
 ```
 
-Or install globally:
+Then open **http://localhost:3847** in your browser.
 
-```bash
-npm install -g openclaw-observability
-openclaw-obs
+The proxy starts automatically on `http://127.0.0.1:18801` the first time it detects Claude credentials at `~/.claude/.credentials.json`.
+
+---
+
+## Wire it into OpenClaw
+
+Edit `~/.openclaw/openclaw.json` so each provider's `baseUrl` points at the local proxy. That makes every call route through observability, pricing, kill-switches, and the logger.
+
+```json
+{
+  "models": {
+    "providers": {
+      "anthropic": { "baseUrl": "http://127.0.0.1:18801" },
+      "openai":    { "baseUrl": "http://127.0.0.1:18801/openai/v1" },
+      "google":    { "baseUrl": "http://127.0.0.1:18801/google" },
+      "openrouter":{ "baseUrl": "http://127.0.0.1:18801/openrouter/v1" },
+      "groq":      { "baseUrl": "http://127.0.0.1:18801/groq/openai/v1" },
+      "cerebras":  { "baseUrl": "http://127.0.0.1:18801/cerebras/v1" },
+      "xai":       { "baseUrl": "http://127.0.0.1:18801/xai/v1" },
+      "ollama":    { "baseUrl": "http://127.0.0.1:18801/ollama", "api": "ollama" }
+    }
+  }
+}
 ```
 
-The dashboard will be available at **http://localhost:3847**.
+Restart the OpenClaw gateway so the new `baseUrl`s take effect.
 
-## Configuration
+---
 
-All configuration is via environment variables. No config files required for basic usage.
+## Environment variables
+
+All optional.
 
 | Variable | Default | Description |
 |---|---|---|
 | `OPENCLAW_DIR` | `~/.openclaw` | Path to your OpenClaw directory |
 | `OBS_PORT` | `3847` | Dashboard server port |
 | `OBS_HOST` | `0.0.0.0` | Bind address |
-| `OBS_LIMITS_FILE` | `$OPENCLAW_DIR/observability/limits.json` | Path to spend limits config |
-| `OBS_BILLING_PROXY_AUTOSTART` | `1` | Start the embedded Anthropic billing proxy on boot when Claude credentials are available |
-| `OBS_BILLING_PROXY_PORT` | `18801` | Embedded billing proxy port |
-| `OBS_BILLING_PROXY_HOST` | `127.0.0.1` | Embedded billing proxy bind address |
-| `OBS_BILLING_PROXY_ROUTE_BASE_URL` | `http://127.0.0.1:$OBS_BILLING_PROXY_PORT` | `baseUrl` written into `models.providers.anthropic.baseUrl` |
-| `OBS_BILLING_PROXY_CONFIG` | `$OPENCLAW_DIR/observability/billing-proxy.json` | Optional advanced config file for replacement maps and proxy behavior |
-| `ANTHROPIC_COST` | `subscription` | Set to `metered` to track Anthropic costs at API rates |
+| `OBS_LIMITS_FILE` | `$OPENCLAW_DIR/observability/limits.json` | Spend + rate limit config |
+| `OBS_BILLING_PROXY_AUTOSTART` | `1` | Start the proxy on boot when Claude creds are present |
+| `OBS_BILLING_PROXY_PORT` | `18801` | Proxy port (all providers multiplex here) |
+| `OBS_BILLING_PROXY_HOST` | `127.0.0.1` | Proxy bind address |
 
-Example with custom settings:
+---
 
-```bash
-OPENCLAW_DIR=/path/to/.openclaw OBS_PORT=8080 openclaw-obs
-```
+## Dashboard tabs
 
-## Embedded Billing Proxy
+### 💸 Spend
+Historical spend aggregated by agent / model / source / day / cron. Reads from session JSONL files. Works even for subscription calls (API-equivalent cost is always computed).
 
-`openclaw-observability` can now run the `openclaw-billing-proxy` logic internally. The Settings tab exposes:
+### 📋 Calls
+Every single call captured by the proxy, live. Filters: provider, model, billing mode (SUB/API). Columns:
 
-- Proxy runtime status and Claude credential detection
-- Current Anthropic `baseUrl` vs. the local proxy target
-- Buttons to start/restart the proxy and apply/remove the Anthropic proxy route
+| Col | Meaning |
+|---|---|
+| Time | local timestamp |
+| Provider / Model | who served the call |
+| Agent | derived from request body / openclaw.json whitelist |
+| Query | last user message (tooltip has full text) |
+| In / Out / Cache / Total | token counts |
+| Cost / $/1k | API-equivalent USD |
+| Lat | round-trip latency |
+| Billing | **SUB** (subscription plan) or **API** (pay-per-token) |
 
-When the proxy route is changed, restart the OpenClaw gateway so the new `baseUrl` takes effect.
+### ⏰ Crons
+List every OpenClaw cron with schedule, agent, last-run status, consecutive errors. Enable/disable or **permanently delete** any cron from the UI.
 
-## Spend Limits
+### 🛡 Limits — Kill-switches
+Edit `~/.openclaw/observability/limits.json` with a form. Proxy hot-reloads on mtime change.
 
-Copy the example limits file and customize:
+- **Emergency pause** — single-click kill-switch. Auto-saves immediately. Sticks a red banner across the dashboard while active.
+- **Global USD caps** — daily / weekly / monthly. Blocks upstream requests with HTTP 429 when exceeded. Does NOT trigger for zero-cost providers (see next).
+- **Rate + token caps** per provider — required for Ollama / local inference. Supports `callsPerMinute`, `callsPerHour`, `callsPerDay`, `tokensPerDay`.
+- **Loop detector** — if any single session makes more than N calls in X seconds, further calls are auto-blocked.
 
-```bash
-cp node_modules/openclaw-observability/config/limits.example.json ~/.openclaw/observability/limits.json
-```
-
-The limits file supports:
-
-- **Global limits** — daily, weekly, and monthly caps across all agents
-- **Per-agent limits** — individual daily and monthly caps per agent
-- **Per-model limits** — daily caps per model (e.g., limit Opus usage)
-- **Warning threshold** — alert at 80% of limit (configurable)
-- **Telegram alerts** — optional real-time notifications
+Example `limits.json`:
 
 ```json
 {
   "enabled": true,
-  "global": {
-    "dailyLimit": 10.00,
-    "weeklyLimit": 50.00,
-    "monthlyLimit": 200.00
-  },
-  "perAgent": {
-    "my-agent": { "dailyLimit": 5.00, "monthlyLimit": 50.00 }
-  },
-  "actions": {
-    "warningThreshold": 0.80
-  }
-}
-```
-
-## Hooks Installation
-
-OpenClaw hooks provide automatic startup, spend monitoring, and model drift protection. Copy the hooks into your OpenClaw hooks directory:
-
-```bash
-# Create hook directories
-mkdir -p ~/.openclaw/hooks/{observability,spend-guard,model-guard}
-
-# Copy hooks
-cp node_modules/openclaw-observability/hooks/observability/handler.ts ~/.openclaw/hooks/observability/
-cp node_modules/openclaw-observability/hooks/spend-guard/handler.ts ~/.openclaw/hooks/spend-guard/
-cp node_modules/openclaw-observability/hooks/model-guard/handler.ts ~/.openclaw/hooks/model-guard/
-```
-
-### Hook descriptions
-
-| Hook | Trigger | What it does |
-|---|---|---|
-| **observability** | Gateway startup | Launches the dashboard server automatically |
-| **spend-guard** | Every message sent | Checks spend against limits, sends alerts on breach |
-| **model-guard** | Gateway startup | Cleans stale session overrides that don't match configured models |
-
-## Dashboard Tabs
-
-### Spend Tab
-
-The main view showing:
-
-- **KPI cards** — total real API spend, tokens processed, API call count
-- **Daily spend chart** — bar chart of daily costs over time
-- **Breakdowns** — by agent, model, source (cron/subagent/telegram/whatsapp/direct)
-- **Cron tracking** — cost per scheduled job with execution counts
-- **Subagent detail** — costs for spawned sub-tasks with context
-- **Recent calls** — live stream of the latest API requests
-
-Click on any agent, model, cron, subagent, or event row for a detailed modal.
-
-### Settings Tab
-
-- **Agent model selector** — change the AI model for each agent
-- **Default model** — set the model for new agents
-- **Cron toggles** — enable/disable scheduled jobs
-- **Gateway restart** — apply model changes without CLI
-
-### Security Tab
-
-Automatic security audit of your OpenClaw deployment:
-
-- **Security score** (0-100) based on weighted findings
-- **File permissions** — checks for world-readable secrets
-- **Secret storage** — detects plaintext vs. SecretRef (dotenvx encrypted) API keys
-- **Network exposure** — gateway binding and auth mode
-- **Channel allowlists** — WhatsApp and Telegram access control
-- **Token expiry** — flags expired auth profiles
-- **dotenvx status** — encryption-at-rest verification
-
-## Pricing Engine
-
-The cost calculator handles provider-specific nuances:
-
-- **Anthropic** — subscription plans show $0 real cost by default (configurable via `ANTHROPIC_COST=metered`)
-- **Google** — correct formula: `uncached = input - cacheRead` (avoids the common double-counting bug). Long-context requests (>200K tokens) use the higher pricing tier automatically.
-- **Noosphere** — if `@mariozechner/pi-ai` is installed, model pricing is loaded from the Noosphere catalog. Otherwise, fallback pricing is used.
-
-## dotenvx Setup (Advanced)
-
-For production deployments, encrypt your secrets with [dotenvx](https://dotenvx.com):
-
-```bash
-# Install dotenvx
-brew install dotenvx/brew/dotenvx
-
-# Create encrypted .env in your OpenClaw directory
-cd ~/.openclaw
-dotenvx set GOOGLE_API_KEY "your-key-here"
-dotenvx set TELEGRAM_BOT_TOKEN "your-token-here"
-
-# Move the private key to macOS Keychain (remove from disk)
-security add-generic-password -a "$USER" -s "openclaw-dotenvx" -w "$(cat .env.keys)"
-rm .env.keys
-```
-
-Then reference secrets in `openclaw.json` using SecretRef objects instead of plaintext strings:
-
-```json
-{
-  "models": {
-    "providers": {
-      "google": {
-        "apiKey": { "source": "dotenvx", "key": "GOOGLE_API_KEY" }
-      }
+  "paused": false,
+  "global": { "dailyUsd": 10, "weeklyUsd": 50, "monthlyUsd": 200 },
+  "perAgent":  { "anhelo": { "dailyUsd": 3 } },
+  "perModel":  { "claude-opus-4-6": { "dailyUsd": 5 } },
+  "rateLimits": {
+    "perProvider": {
+      "ollama": { "callsPerMinute": 120, "callsPerHour": 2000, "tokensPerDay": 50000000 }
     }
-  }
+  },
+  "loopDetector": { "enabled": true, "windowSec": 60, "maxCalls": 30 }
 }
 ```
 
-The Security tab will show green checks for all SecretRef-backed values.
+### ⚙️ Settings
+Select each agent's model. Toggle crons. Inspect provider connectivity.
+
+### 🔐 Security
+Audit: exposed secrets in config files, file permissions, encryption status.
+
+---
+
+## REST API
+
+All endpoints are local, no auth needed (bind to loopback by default).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/dashboard` | Spend aggregate for range/filters |
+| GET | `/api/calls?from&to&provider&agent_id&model&limit&offset` | Paginated call log |
+| GET | `/api/calls/aggregate?by=provider|model|agent_id` | Roll-up stats |
+| GET | `/api/limits` | Current limits + spend snapshot |
+| POST | `/api/limits` | Atomic write to `limits.json` |
+| GET | `/api/crons` | List every cron, enabled or not |
+| POST | `/api/crons/:id/toggle` | `{enable:true|false}` |
+| DELETE | `/api/crons/:id` | Permanent delete |
+| GET | `/api/billing-proxy` | Proxy health + guard snapshot |
+| GET | `/api/security` | Security audit |
+
+---
+
+## Deep-linkable URLs
+
+Every tab and section has a hash slug. Hover any heading to reveal a 🔗 icon — click to copy a shareable URL.
+
+```
+#spend
+#calls              #calls/filters
+#crons
+#limits             #limits/caps       #limits/loop        #limits/rates
+#settings
+#security
+```
+
+---
+
+## Kill-switch codes
+
+When the proxy blocks a request it returns HTTP 429 with a structured payload. Useful for debugging and alerting:
+
+| Code | Trigger |
+|---|---|
+| `paused` | Emergency switch is ON |
+| `global_daily_cap` · `global_weekly_cap` · `global_monthly_cap` | Global USD cap reached |
+| `agent_daily_cap` · `model_daily_cap` · `provider_daily_cap` | Per-dimension USD cap |
+| `loop_detected` | Session fired too many calls too fast |
+| `provider_rpm_cap` · `provider_rph_cap` · `provider_rpd_cap` | Rate-limit for zero-cost provider |
+| `provider_tpd_cap` · `agent_id_tpd_cap` · `model_tpd_cap` | Token-budget cap |
+
+---
+
+## How costs are computed
+
+- Pricing table comes from [noosphere](https://www.npmjs.com/package/noosphere) (`@mariozechner/pi-ai` generated catalog, ~45 models) plus a small fallback table.
+- For subscription calls (e.g. Claude Max) the proxy still prices at API rates, so the dashboard shows the **economic value consumed** even though nothing is charged.
+- Google uses the double-counting-safe formula: `uncached = input − cacheRead`.
+- Ollama / local inference is always priced at $0. Those providers are protected by rate limits instead.
+
+---
+
+## Hooks (optional, for auto-launch)
+
+Copy the 3 hook handlers into your OpenClaw hooks directory to automate startup and spend enforcement:
+
+```bash
+mkdir -p ~/.openclaw/hooks/{observability,spend-guard,model-guard}
+cp node_modules/openclaw-observability/hooks/observability/handler.ts ~/.openclaw/hooks/observability/
+cp node_modules/openclaw-observability/hooks/spend-guard/handler.ts   ~/.openclaw/hooks/spend-guard/
+cp node_modules/openclaw-observability/hooks/model-guard/handler.ts   ~/.openclaw/hooks/model-guard/
+```
+
+| Hook | Trigger | Effect |
+|---|---|---|
+| **observability** | Gateway startup | Launches the dashboard server |
+| **spend-guard** | Before each agent turn | Rejects the call if caps are breached |
+| **model-guard** | Before each agent turn | Prevents drift to more expensive models |
+
+---
+
+## Security notes
+
+- The proxy binds to loopback (`127.0.0.1`) by default. Do **not** expose it publicly — it relays OAuth tokens.
+- `~/.claude/.credentials.json` is read in-memory; never logged or echoed.
+- `limits.json` and `calls.db` live inside `~/.openclaw/observability/`. The repo `.gitignore` excludes every user-specific directory.
+- Run `git log -p` against this repo to verify: zero secrets committed.
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/<your-org>/openclaw-observability
+cd openclaw-observability
+npm install
+node bin/cli.mjs
+```
+
+Source layout:
+
+```
+src/
+├── server.mjs           # Dashboard HTTP + REST API
+├── billing-proxy.mjs    # Anthropic proxy (OAuth rewriting)
+├── multi-provider.mjs   # Generic router for OpenAI/Google/Ollama/etc
+├── usage-parser.mjs     # Per-provider token extractor
+├── logger.mjs           # SQLite call log (better-sqlite3, JSONL fallback)
+├── guards.mjs           # Kill-switch evaluator (caps + rate + loop detector)
+├── pricing.mjs          # noosphere-backed cost calculator
+└── dashboard.html       # Single-file SPA, Tailwind + vanilla JS
+```
 
 ## License
 
