@@ -412,6 +412,9 @@ window.addEventListener('hashchange', applyHashRoute);
 document.addEventListener('DOMContentLoaded', () => {
   applyHashRoute();
   injectSlugAnchors();
+  // Always fetch limits on first load so the pause banner is accurate
+  // even before the user opens the Limits tab.
+  fetch('/api/limits').then(r=>r.json()).then(l=>{ _currentLimits=l.limits||{}; updatePauseBanner(); }).catch(()=>{});
 });
 
 // Toast feedback
@@ -890,6 +893,7 @@ async function loadLimits(){
   $('loopMax').value=l.limits?.loopDetector?.maxCalls??30;
   $('loopEn').checked=l.limits?.loopDetector?.enabled!==false;
   renderRateRows(l.limits?.rateLimits?.perProvider||{});
+  updatePauseBanner();
 }
 // Known providers served by the proxy. 🪙 marks zero-cost / local.
 const KNOWN_PROVIDERS = [
@@ -957,25 +961,60 @@ function collectRateRows(){
   return out;
 }
 async function saveLimits(){
+  const num=v=>{ const n=parseFloat(v); return Number.isFinite(n)?n:null; };
   const payload={
     enabled:true,
-    paused:$('capPaused').checked,
+    paused:!!$('capPaused').checked,
     global:{
-      dailyUsd:parseFloat($('capDaily').value)||null,
-      weeklyUsd:parseFloat($('capWeekly').value)||null,
-      monthlyUsd:parseFloat($('capMonthly').value)||null
+      dailyUsd:num($('capDaily').value),
+      weeklyUsd:num($('capWeekly').value),
+      monthlyUsd:num($('capMonthly').value),
     },
     loopDetector:{
-      enabled:$('loopEn').checked,
+      enabled:!!$('loopEn').checked,
       windowSec:parseInt($('loopWin').value)||60,
-      maxCalls:parseInt($('loopMax').value)||30
+      maxCalls:parseInt($('loopMax').value)||30,
     },
-    rateLimits:{perProvider:collectRateRows(),perAgent:{},perModel:{}}
+    rateLimits:{
+      perProvider:collectRateRows(),
+      perAgent:_currentLimits.rateLimits?.perAgent||{},
+      perModel:_currentLimits.rateLimits?.perModel||{},
+    },
   };
-  $('limSaveStatus').textContent='saving...';
-  const r=await fetch('/api/limits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-  $('limSaveStatus').textContent=r.ok?'✓ saved':'✗ '+(r.error||'err');
-  setTimeout(()=>{$('limSaveStatus').textContent='';loadLimits();},2000);
+  console.log('[limits] POST payload', payload);
+  $('limSaveStatus').innerHTML='<span style="color:#fab387">saving…</span>';
+  try{
+    const r=await fetch('/api/limits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(!r.ok)throw new Error(r.error||'unknown');
+    console.log('[limits] saved', r.limits);
+    $('limSaveStatus').innerHTML='<span style="color:#a6e3a1">✓ saved</span>';
+    showToast('Limits saved');
+    // Refresh form values from the server immediately (not 2s later) so the
+    // user sees exactly what was persisted.
+    await loadLimits();
+    updatePauseBanner();
+  }catch(e){
+    console.error('[limits] save failed', e);
+    $('limSaveStatus').innerHTML='<span style="color:#f38ba8">✗ '+String(e.message||e)+'</span>';
+    showToast('Save failed: '+e.message);
+  }
+}
+
+/** Big red banner so the user can't miss when pause/kill-switch is ON. */
+function updatePauseBanner(){
+  let b=$('pauseBanner');
+  const paused=!!_currentLimits?.paused;
+  if(paused){
+    if(!b){
+      b=document.createElement('div');
+      b.id='pauseBanner';
+      b.style.cssText='position:sticky;top:0;z-index:40;background:#f38ba8;color:#11111b;padding:10px 16px;font-weight:700;font-size:13px;text-align:center;letter-spacing:.5px;box-shadow:0 4px 12px rgba(243,139,168,.3)';
+      b.innerHTML='⛔ ALL REQUESTS PAUSED — emergency kill-switch is ON. Uncheck "Pause all" in Limits to resume.';
+      document.body.prepend(b);
+    }
+  }else if(b){
+    b.remove();
+  }
 }
 </script>
 </body>
