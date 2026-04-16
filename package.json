@@ -1,6 +1,6 @@
 {
   "name": "0xai-openclaw-guardian",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0-alpha.1",
   "description": "Real-time cost tracking, security monitoring, and settings dashboard for OpenClaw AI agent deployments",
   "type": "module",
   "main": "src/server.mjs",
