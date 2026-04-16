@@ -1,7 +1,7 @@
 {
   "name": "0xai-openclaw-guardian",
   "version": "2.0.0-alpha.1",
-  "description": "Real-time cost tracking, security monitoring, and settings dashboard for OpenClaw AI agent deployments",
+  "description": "Real-time observability, cost tracking, and kill-switches for OpenClaw AI agent deployments — multi-provider proxy (Anthropic, OpenAI, Google, OpenRouter, Groq, Cerebras, xAI, Ollama, HuggingFace) with a Catppuccin-themed dashboard.",
   "type": "module",
   "main": "src/server.mjs",
   "bin": {
@@ -9,8 +9,10 @@
     "openclaw-observability": "./bin/cli.mjs"
   },
   "scripts": {
-    "start": "node src/server.mjs",
-    "dev": "node src/server.mjs"
+    "start": "node bin/cli.mjs",
+    "dev": "node bin/cli.mjs",
+    "init": "node bin/cli.mjs init",
+    "status": "node bin/cli.mjs status"
   },
   "keywords": [
     "openclaw",
@@ -18,7 +20,16 @@
     "cost-tracking",
     "ai-agents",
     "dashboard",
-    "monitoring"
+    "monitoring",
+    "billing-proxy",
+    "kill-switch",
+    "rate-limiting",
+    "anthropic",
+    "openai",
+    "gemini",
+    "ollama",
+    "claude",
+    "llm-observability"
   ],
   "license": "MIT",
   "engines": {
@@ -34,15 +45,29 @@
     "config/",
     "hooks/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/0xAI-Builders/0xai-openclaw-guardian"
+    "url": "git+https://github.com/0xAI-Builders/0xai-openclaw-guardian.git"
   },
   "homepage": "https://github.com/0xAI-Builders/0xai-openclaw-guardian#readme",
   "bugs": {
     "url": "https://github.com/0xAI-Builders/0xai-openclaw-guardian/issues"
   },
-  "author": "0xAI-Builders"
+  "author": "0xAI-Builders (https://github.com/0xAI-Builders)",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/0xAI-Builders"
+    },
+    {
+      "type": "individual",
+      "url": "https://github.com/sponsors/0xjesus"
+    }
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

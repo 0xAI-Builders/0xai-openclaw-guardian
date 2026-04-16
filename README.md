@@ -1,6 +1,13 @@
-# OpenClaw Observability
+# 0xAI OpenClaw Guardian
 
 Real-time observability, **cost tracking**, **kill-switches** and configuration dashboard for [OpenClaw](https://openclaw.ai) AI agent deployments.
+
+[![npm version](https://img.shields.io/npm/v/0xai-openclaw-guardian.svg?style=flat-square&color=fab387)](https://www.npmjs.com/package/0xai-openclaw-guardian)
+[![npm downloads](https://img.shields.io/npm/dm/0xai-openclaw-guardian.svg?style=flat-square&color=a6e3a1)](https://www.npmjs.com/package/0xai-openclaw-guardian)
+[![license](https://img.shields.io/npm/l/0xai-openclaw-guardian.svg?style=flat-square&color=89b4fa)](./LICENSE)
+[![Node](https://img.shields.io/node/v/0xai-openclaw-guardian.svg?style=flat-square&color=cba6f7)](https://nodejs.org)
+[![GitHub Sponsors](https://img.shields.io/badge/sponsor-0xAI--Builders-f38ba8.svg?style=flat-square&logo=github-sponsors)](https://github.com/sponsors/0xAI-Builders)
+[![Buy Me a Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-0xjesus-yellow.svg?style=flat-square&logo=buymeacoffee)](https://buymeacoffee.com/0xjesus)
 
 - 🔍 Intercepts **every AI call** from OpenClaw to any provider (Anthropic, OpenAI, Google, OpenRouter, Groq, Cerebras, xAI, Ollama, HuggingFace)
 - 💰 Real per-call cost calculation via **noosphere** pricing catalog (45+ models, auto-synced)
