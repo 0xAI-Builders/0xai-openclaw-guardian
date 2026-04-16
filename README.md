@@ -215,11 +215,46 @@ cp node_modules/openclaw-observability/hooks/model-guard/handler.ts   ~/.opencla
 
 ---
 
+## Authentication (opt-in)
+
+By default the dashboard is **open** (loopback only, no credentials required). If you need to expose it over Tailscale, VPN, or a public URL, turn on auth:
+
+```bash
+OBS_ENABLE_AUTH=1 openclaw-obs start
+```
+
+When enabled, every `/api/*` request requires the **same gateway token** OpenClaw already uses:
+
+```
+Authorization: Bearer <GATEWAY_AUTH_TOKEN>
+```
+
+Also accepted via `X-OpenClaw-Token` or `X-Gateway-Token` headers, or a one-time `?token=...` URL param (stored in localStorage, then stripped from the address bar).
+
+Token resolution (first match wins):
+
+| Source | How |
+|---|---|
+| `GATEWAY_AUTH_TOKEN` env var | Inherited from dotenvx when dashboard runs inside the gateway |
+| `OBS_DASHBOARD_TOKEN` env var | Explicit override |
+| `~/.openclaw/.env` (encrypted) | Decrypted via dotenvx + macOS Keychain |
+| `~/.openclaw/observability/dashboard.token` | Auto-generated fallback (created on first run) |
+
+The dashboard SPA detects auth via `GET /api/_auth/bootstrap` (public, returns `{authRequired: bool}` — no secrets). If required and no token is stored, it prompts once.
+
+```bash
+# CLI equivalents
+openclaw-obs limits pause     # emergency kill-switch (works with auth too)
+openclaw-obs limits resume
+openclaw-obs status           # shows auth source in output
+```
+
 ## Security notes
 
-- The proxy binds to loopback (`127.0.0.1`) by default. Do **not** expose it publicly — it relays OAuth tokens.
+- The proxy binds to loopback (`127.0.0.1`) by default. Do **not** expose it publicly without `OBS_ENABLE_AUTH=1`.
 - `~/.claude/.credentials.json` is read in-memory; never logged or echoed.
 - `limits.json` and `calls.db` live inside `~/.openclaw/observability/`. The repo `.gitignore` excludes every user-specific directory.
+- Auth uses constant-time comparison (`crypto.timingSafeEqual`) to prevent timing attacks.
 - Run `git log -p` against this repo to verify: zero secrets committed.
 
 ---
