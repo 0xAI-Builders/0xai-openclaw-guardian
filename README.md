@@ -9,6 +9,10 @@ Real-time observability, **cost tracking**, **kill-switches** and configuration 
 - 🔗 Stateful: SQLite-backed `calls.db` for live queries and aggregations
 - 🪙 Subscription-aware: shows **SUB vs API** per call, always prints the API-equivalent cost (even for Claude Max)
 
+![Dashboard — Spend tab](docs/dashboard-spend.png)
+
+> Real-time spend breakdown by agent, model, and source. API-equivalent cost is displayed even for subscription (Claude Max) calls, so you always see the economic value consumed.
+
 ---
 
 ## Install
