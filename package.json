@@ -1,6 +1,6 @@
 {
   "name": "0xai-openclaw-guardian",
-  "version": "2.0.0-alpha.1",
+  "version": "2.0.0-alpha.2",
   "description": "Real-time observability, cost tracking, and kill-switches for OpenClaw AI agent deployments — multi-provider proxy (Anthropic, OpenAI, Google, OpenRouter, Groq, Cerebras, xAI, Ollama, HuggingFace) with a Catppuccin-themed dashboard.",
   "type": "module",
   "main": "src/server.mjs",
