@@ -362,6 +362,53 @@ const PROV_IDS=['openai','anthropic','google','groq','mistral','xai','openrouter
 function logoUrl(p){if(!p||!PROV_IDS.includes(p))return'';const dark=document.documentElement.classList.contains('dark');return(dark&&DARK_INVERT.has(p))?CDN+'/svg-dark/'+p+'.svg':CDN+'/svg/'+p+'.svg';}
 let R='today',D=null;
 const $=id=>document.getElementById(id);
+
+// ========== Auth ==========
+// The dashboard re-uses the OpenClaw gateway token. On first load we:
+//  1. Pull ?token=... from the URL, if present, and stash it in localStorage
+//  2. Hit /api/_auth/bootstrap to learn if auth is required
+//  3. If required and we don't have a token, prompt() for one
+//  4. Monkey-patch window.fetch to attach Authorization: Bearer <token>
+(function wireAuth(){
+  // Token from query string (one-shot onboarding)
+  const qs = new URLSearchParams(location.search);
+  const fromQs = qs.get('token');
+  if (fromQs) {
+    localStorage.setItem('obs-token', fromQs.trim());
+    // Clean the URL so the token isn't shoulder-surf visible
+    qs.delete('token');
+    history.replaceState(null, '', location.pathname + (qs.toString() ? '?' + qs.toString() : '') + location.hash);
+  }
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const t = localStorage.getItem('obs-token');
+    if (t) {
+      init.headers = { ...(init.headers || {}), 'Authorization': 'Bearer ' + t };
+    }
+    return originalFetch(input, init).then(async (res) => {
+      if (res.status === 401 && t) {
+        // Stored token is invalid — purge + prompt
+        localStorage.removeItem('obs-token');
+        promptForToken();
+      }
+      return res;
+    });
+  };
+
+  function promptForToken(){
+    const v = prompt('OpenClaw gateway token required to access this dashboard:');
+    if (v && v.trim()) {
+      localStorage.setItem('obs-token', v.trim());
+      location.reload();
+    }
+  }
+
+  // Discover if auth is on
+  originalFetch('/api/_auth/bootstrap').then(r=>r.json()).then(d=>{
+    if (d.authRequired && !localStorage.getItem('obs-token')) promptForToken();
+  }).catch(()=>{});
+})();
 const F=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(Math.round(n));
 const money=n=>n>=1?'$'+n.toFixed(2):n>=0.01?'$'+n.toFixed(3):'$'+n.toFixed(4);
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));

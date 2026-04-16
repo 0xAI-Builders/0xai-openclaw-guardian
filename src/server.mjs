@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 import { initPricing, calcCost, AVAILABLE_MODELS } from './pricing.mjs';
+import { makeAuthChecker } from './auth.mjs';
 import { createBillingProxyManager } from './billing-proxy.mjs';
 
 // ---------------------------------------------------------------------------
@@ -609,6 +610,13 @@ function getHTML() {
 // ---------------------------------------------------------------------------
 // HTTP Server
 // ---------------------------------------------------------------------------
+const auth = makeAuthChecker(OPENCLAW_DIR);
+if (auth.expected) {
+  console.log(`[observability] auth: enabled (source=${auth.source})`);
+} else {
+  console.log('[observability] auth: disabled (opt-in via OBS_ENABLE_AUTH=1)');
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
@@ -616,7 +624,7 @@ const server = createServer(async (req, res) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-OpenClaw-Token, X-Gateway-Token',
   };
 
   // Handle preflight
@@ -624,6 +632,22 @@ const server = createServer(async (req, res) => {
     res.writeHead(204, corsHeaders);
     res.end();
     return;
+  }
+
+  // --- Auth gate ---
+  // Bootstrap endpoint tells the SPA whether auth is required (no secrets leaked).
+  if (url.pathname === '/api/_auth/bootstrap') {
+    res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders });
+    res.end(JSON.stringify({ authRequired: !!auth.expected, source: auth.source }));
+    return;
+  }
+  if (auth.expected && !auth.isPublicPath?.(url.pathname)) {
+    const { ok } = auth.check(req);
+    if (!ok) {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="openclaw-obs"', ...corsHeaders });
+      res.end(JSON.stringify({ error: 'unauthorized', hint: 'Send Authorization: Bearer <GATEWAY_AUTH_TOKEN> or X-OpenClaw-Token header.' }));
+      return;
+    }
   }
 
   if (url.pathname === '/api/dashboard') {
